@@ -1,10 +1,14 @@
 {
   "name": "codemeta",
   "displayName": "CodeMeta",
-  "description": "Base VS Code extension blueprint",
-  "version": "0.0.1",
-  "publisher": "your-publisher-id",
+  "description": "Comment-linked Markdown fragments for VS Code",
+  "version": "0.0.4",
+  "publisher": "wumbl3",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/realwumbl3/codemeta"
+  },
   "engines": {
     "vscode": "^1.92.0"
   },
@@ -15,6 +19,7 @@
   "activationEvents": [
     "onStartupFinished"
   ],
+  "icon": "./img/icon.png",
   "contributes": {
     "commands": [
       {
@@ -122,7 +127,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.9.0",
-    "@types/vscode": "^1.105.0",
+    "@types/vscode": "^1.92.0",
     "@vscode/vsce": "^3.6.2",
     "typescript": "^5.9.3"
   }

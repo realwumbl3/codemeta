@@ -1,7 +1,5 @@
-<div align="center">
-  <img style="width: 7em;" src="./img/icon.png"/>
-  <h1>CodeMeta — Comment-linked Markdown fragments for VS Code</h1>
-<img src="./img/bannerJ.jpg"/>
+<div align="center" style="display: flex; flex-direction: column; align-items: center; justify-content: center; margin-bottom: 2em;">
+    <img src="./img/bannerJ.jpg"/>
 </div>
 
 CodeMeta lets you turn lightweight inline comment markers into linked Markdown fragments stored in your workspace. It adds colorful category "pills" in the editor gutter, auto-inserts stable numeric IDs, shows inline previews, and can summarize all fragments in a set.
@@ -18,13 +16,13 @@ CodeMeta lets you turn lightweight inline comment markers into linked Markdown f
 1. In a code file, type a marker and a space after it:
 
 ```js
-//cm ␣
+//cm␣
 ```
 
 or for Python/shell:
 
 ```py
-#cm ␣
+#cm␣
 ```
 
 2. On the space, CodeMeta will:
@@ -109,7 +107,7 @@ Example occurrence link format in Markdown: `vscode://file/<abs-path>:<line>` so
 
 ## Requirements
 
--   VS Code `^1.92.0`
+-   VS Code `^1.105.0`
 -   Works in single- or multi-root workspaces (files are placed under the nearest workspace folder)
 
 ## Install (from source)
@@ -137,4 +135,4 @@ Package a VSIX: `npm run package` (produces a `.vsix` you can install via the Ex
 
 ## License
 
-MIT © wumbl3
+MIT © wumbl3 [github](https://github.com/realwumbl3)
