@@ -1,0 +1,80 @@
+set = "task001"
+generated = "2025-10-21T20:17:23.630Z"
+count = 7
+
+[[fragments]]
+id = "1269733600"
+category = "INFO"
+file = "cms/task001/1269733600.md"
+content = """
+"""
+[[fragments.occurrences]]
+file = "nested/test.ts"
+line = 44
+
+[[fragments]]
+id = "2423884374"
+category = "INFO"
+file = "cms/task001/2423884374.md"
+content = """
+"""
+[[fragments.occurrences]]
+file = "nested/test.ts"
+line = 38
+
+[[fragments]]
+id = "3903052536"
+category = "INFO"
+file = "cms/task001/3903052536.md"
+content = """
+"""
+[[fragments.occurrences]]
+file = "nested/test.ts"
+line = 1
+
+[[fragments]]
+id = "5339121762"
+category = "BUG"
+file = "cms/task001/5339121762.md"
+content = """what"""
+[[fragments.occurrences]]
+file = "nested/test.ts"
+line = 42
+[[fragments.occurrences]]
+file = "nested/test.ts"
+line = 49
+[[fragments.occurrences]]
+file = "nested/test.ts"
+line = 57
+
+[[fragments]]
+id = "7596464309"
+category = "INFO"
+file = "cms/task001/7596464309.md"
+content = """hello what the heck uwu
+
+that's cool?"""
+[[fragments.occurrences]]
+file = "nested/test.ts"
+line = 47
+
+[[fragments]]
+id = "9125983700"
+category = "NOTE"
+file = "cms/task001/9125983700.md"
+content = """
+"""
+[[fragments.occurrences]]
+file = "nested/test.ts"
+line = 12
+
+[[fragments]]
+id = "9887239216"
+category = "INFO"
+file = "cms/task001/9887239216.md"
+content = """test?
+"""
+[[fragments.occurrences]]
+file = "nested/test.ts"
+line = 40
+

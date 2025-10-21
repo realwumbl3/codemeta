@@ -1,5 +1,5 @@
 <div align="center">
-  <img style="width: 7em;" src="./img/iconL.png"/>
+  <img style="width: 7em;" src="./img/icon.png"/>
   <h1>CodeMeta — Comment-linked Markdown fragments for VS Code</h1>
 <img src="./img/bannerJ.jpg"/>
 </div>
