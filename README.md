@@ -2,7 +2,7 @@
     <img src="./img/bannerJ.jpg"/>
 </div>
 
-CodeMeta lets you turn lightweight inline comment markers into linked Markdown fragments stored in your workspace. It adds colorful category "pills" in the editor gutter, auto-inserts stable numeric IDs, shows inline previews, and can summarize all fragments in a set.
+CodeMeta lets you turn lightweight inline comment markers into linked Markdown fragments stored in your workspace. It adds colorful category "pills" in the editor gutter, auto-inserts stable numeric IDs, shows inline previews in the pill, and can summarize all fragments in a set.
 
 ### Why
 
@@ -30,7 +30,7 @@ or for Python/shell:
 -   Append a numeric ID, e.g. `//cm 1234567890`
 -   Create `cms/<active-set>/<id>.md` with frontmatter
 -   Open the fragment beside the source editor
--   Insert an inline bracket preview after the ID, e.g. `[First line…]`
+-   Display a category pill on the line with the first fragment line; hover to see more
 
 3. Click the `cm` marker or run the command to reopen the fragment any time.
 
@@ -55,7 +55,7 @@ Change `category` as you like (e.g., `BUG`, `TODO`, `NOTE`) and customize colors
 
 -   **Markers**: `//cm` (C/JS-like) and `#cm` (Python/shell)
 -   **Auto-ID**: 6–32 digit numeric IDs (default 10)
--   **Inline preview**: first line shown as `[... ]` after the ID
+-   **Pill preview**: first line shown inside the pill (no text inserted into your file)
 -   **Hover preview**: pill tooltip shows a multi-line preview
 -   **Clickable marker**: Ctrl/Cmd+Click on `cm` opens/creates the fragment
 -   **Fragment sets**: organize fragments under `cms/<set>/`; switch sets quickly
@@ -130,7 +130,7 @@ Package a VSIX: `npm run package` (produces a `.vsix` you can install via the Ex
 ## Tips
 
 -   To create a fragment manually, place the cursor on a line with `//cm` or `#cm` and run "Create Fragment for Line"
--   Edit the first line of a fragment to improve its inline bracket preview
+-   Edit the first line of a fragment to improve its pill preview
 -   Keep your `cms/` directory under version control if you want fragment history
 
 ## License

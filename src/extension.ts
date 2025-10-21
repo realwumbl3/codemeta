@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
 
-const labelPrefix = 'cm:';
+const labelPrefix = '';
 const PILL_TEXT_DECORATION = 'none; outline: 1px solid currentColor; outline-offset: -2px; border-radius: 999px; padding: 0px 6px; opacity:1;';
 
 let isApplyingEdit = false;
 let activeSet = 'default';
+type CmItem = { range: vscode.Range; hoverMessage?: vscode.MarkdownString; inline?: string };
 // Unified ID utilities
 const ID_MIN = 6;
 const ID_MAX = 32;
@@ -79,26 +80,7 @@ export function activate(context: vscode.ExtensionContext): void {
 				}
 			}
 		}
-		// Refresh inline preview for any lines that contain a marker & ID
-		const touchedLines = new Set<number>();
-		for (const ch of e.contentChanges) {
-			touchedLines.add(ch.range.start.line);
-			if (ch.range.end.line !== ch.range.start.line) {
-				touchedLines.add(ch.range.end.line);
-			}
-		}
-		for (const ln of touchedLines) {
-			const line = e.document.lineAt(Math.min(Math.max(0, ln), e.document.lineCount - 1));
-			const markerInfo = findMarker(line.text);
-			if (!markerInfo) continue;
-			const after = line.text.slice(markerInfo.markerEnd);
-			const id = extractIdAfterMarkerText(after);
-			if (!id) continue;
-			// Avoid loops on our own replacement edits
-			if (!isApplyingEdit) {
-				await ensureInlinePreviewOnLine(e.document, ln);
-			}
-		}
+		// Inline bracket preview removed; rely on debounced pill refresh instead
 		if (debouncedRefresh) debouncedRefresh();
 	});
 
@@ -138,8 +120,7 @@ export function activate(context: vscode.ExtensionContext): void {
 				targetEditor.selection = new vscode.Selection(pos, pos);
 				targetEditor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
 			}
-			// Update inline preview [first line…] after the ID in the source document
-			await ensureInlinePreviewOnLine(document, targetLine);
+			// Inline bracket preview removed; pills are refreshed separately
 			return;
 		}
 		if (!editor || editor.document.uri.toString() !== document.uri.toString()) {
@@ -220,7 +201,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
 	async function refreshPills(): Promise<void> {
 		for (const ed of vscode.window.visibleTextEditors) {
-			const perCategory: Record<string, vscode.DecorationOptions[]> = {};
+			const perCategory: Record<string, CmItem[]> = {};
 			const doc = ed.document;
 			for (let i = 0; i < doc.lineCount; i++) {
 				const line = doc.lineAt(i);
@@ -229,15 +210,14 @@ export function activate(context: vscode.ExtensionContext): void {
 				const after = line.text.slice(markerInfo.markerEnd);
 				const id = extractIdAfterMarkerText(after);
 				if (!id) continue; // only show pill when an ID exists
-				const { preview, categoryLabel } = await getFragmentPreviewAndCategory(doc.uri, id);
+				const { preview, categoryLabel, inline } = await getFragmentPreviewAndCategory(doc.uri, id);
 				const range = new vscode.Range(i, 0, i, 0);
-				const opts: vscode.DecorationOptions = { range };
+				const opts: CmItem = { range };
 				if (preview) {
 					opts.hoverMessage = new vscode.MarkdownString(preview);
 				}
+				opts.inline = inline || undefined;
 				(perCategory[categoryLabel] ||= []).push(opts);
-				// keep the inline bracket preview in sync
-				await ensureInlinePreviewOnLine(doc, i);
 			}
 			// Apply decorations per category
 			const labels = new Set(Object.keys(perCategory));
@@ -250,7 +230,7 @@ export function activate(context: vscode.ExtensionContext): void {
 					const dec = vscode.window.createTextEditorDecorationType({
 						isWholeLine: false,
 						before: {
-							contentText: `${labelPrefix}${label}`,
+							contentText: `${labelPrefix}${label}:`,
 							color: defStyle.foreground,
 							backgroundColor: defStyle.background,
 							margin: '0 0.6em 0 0',
@@ -263,12 +243,12 @@ export function activate(context: vscode.ExtensionContext): void {
 				}
 			}
 			for (const [label, dec] of categoryDecorations) {
-				const items = perCategory[label] || [];
+				const items: CmItem[] = perCategory[label] || [];
 				// Attach contentText per instance
-				const withContent = items.map((it) => ({
+				const withContent: vscode.DecorationOptions[] = items.map((it) => ({
 					range: it.range,
 					hoverMessage: it.hoverMessage,
-					renderOptions: { before: { contentText: `${labelPrefix}${label}` } }
+					renderOptions: { before: { contentText: `${labelPrefix}${label}:${it.inline ? ' ' + it.inline : ''}` } }
 				}));
 				ed.setDecorations(dec, withContent);
 			}
@@ -338,7 +318,7 @@ async function handlePotentialMarker(document: vscode.TextDocument, lineNumber: 
 		targetEditor.selection = new vscode.Selection(pos, pos);
 		targetEditor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
 	}
-	await ensureInlinePreviewOnLine(document, lineNumber);
+	// Inline bracket preview removed; pills refresh will handle showing preview inside pill
 }
 
 function findMarker(lineText: string): { markerStart: number; markerEnd: number } | null {
@@ -392,20 +372,23 @@ async function ensureFragmentFile(sourceUri: vscode.Uri, id: string): Promise<{ 
 	return { uri: fragmentUri, created };
 }
 
-async function getFragmentPreviewAndCategory(sourceUri: vscode.Uri, id: string): Promise<{ preview: string | null; categoryLabel: string }> {
+async function getFragmentPreviewAndCategory(sourceUri: vscode.Uri, id: string): Promise<{ preview: string | null; categoryLabel: string; inline: string | null }> {
 	const uri = await findAnyFragmentUri(sourceUri, id);
 	let category = 'INFO';
-	if (!uri) return { preview: null, categoryLabel: category };
+	if (!uri) return { preview: null, categoryLabel: category, inline: null };
 	try {
 		const data = await vscode.workspace.fs.readFile(uri);
 		const text = Buffer.from(data).toString('utf8');
 		const { body, category: parsedCat } = parseFrontmatterAndCategory(text);
 		if (parsedCat) category = parsedCat;
 		const trimmed = body.trim();
-		if (!trimmed) return { preview: null, categoryLabel: category };
-		return { preview: truncateLines(trimmed, 12, 600), categoryLabel: category };
+		if (!trimmed) return { preview: null, categoryLabel: category, inline: null };
+		const firstLine = trimmed.split(/\r?\n/)[0]?.trim() || '';
+		const hasMore = /\r?\n/.test(trimmed);
+		const inline = firstLine ? `${firstLine}${hasMore ? '…' : ''}` : '';
+		return { preview: truncateLines(trimmed, 12, 600), categoryLabel: category, inline };
 	} catch {
-		return { preview: null, categoryLabel: category };
+		return { preview: null, categoryLabel: category, inline: null };
 	}
 }
 
@@ -565,46 +548,7 @@ async function findAnyFragmentUri(sourceUri: vscode.Uri, id: string): Promise<vs
 	return null;
 }
 
-async function ensureInlinePreviewOnLine(document: vscode.TextDocument, lineNumber: number): Promise<void> {
-	const line = document.lineAt(lineNumber);
-	const markerInfo = findMarker(line.text);
-	if (!markerInfo) return;
-	const after = line.text.slice(markerInfo.markerEnd);
-	const id = extractIdAfterMarkerText(after);
-	if (!id) return;
-	const uri = await findAnyFragmentUri(document.uri, id);
-	if (!uri) return;
-	try {
-		const data = await vscode.workspace.fs.readFile(uri);
-		const text = Buffer.from(data).toString('utf8');
-		const body = stripFrontmatter(text);
-		const [firstLineRaw, ...rest] = body.split(/\r?\n/);
-		const firstLine = (firstLineRaw || '').trim();
-		const hasMore = rest.join('\n').trim().length > 0;
-		const preview = firstLine ? `[${firstLine}${hasMore ? '…' : ''}]` : '';
-		// replace existing one or more bracket previews immediately after the ID, then insert one fresh preview
-		const idEndIndex = markerInfo.markerEnd + after.indexOf(id) + id.length;
-		const tail = line.text.slice(idEndIndex);
-		const newTail = tail.replace(/^\s*(\[[^\]]*\]\s*)+/, '');
-		const newText = `${line.text.slice(0, idEndIndex)}${preview ? ' ' + preview : ''}${newTail}`;
-		if (newText !== line.text) {
-			const editor = vscode.window.visibleTextEditors.find(ed => ed.document.uri.toString() === document.uri.toString());
-			if (editor) {
-				try {
-					isApplyingEdit = true;
-					await editor.edit((eb) => {
-						const range = new vscode.Range(line.range.start, line.range.end);
-						eb.replace(range, newText);
-					}, { undoStopBefore: false, undoStopAfter: false });
-				} finally {
-					isApplyingEdit = false;
-				}
-			}
-		}
-	} catch {
-		// ignore
-	}
-}
+// Inline bracket preview removed
 
 function buildCategoryDecorations(): Map<string, vscode.TextEditorDecorationType> {
 	const styles = vscode.workspace.getConfiguration('codemeta').get<any[]>('categoryStyles', []);
@@ -617,7 +561,7 @@ function buildCategoryDecorations(): Map<string, vscode.TextEditorDecorationType
 		const dec = vscode.window.createTextEditorDecorationType({
 			isWholeLine: false,
 			before: {
-				contentText: `${labelPrefix}${label}`,
+				contentText: `${labelPrefix}${label}:`,
 				color: foreground,
 				backgroundColor: background,
 				margin: '0 0.6em 0 0',
