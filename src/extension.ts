@@ -49,6 +49,10 @@ export function activate(context: vscode.ExtensionContext): void {
 	let debouncedRefresh: () => void;
 
 	const changeListener = vscode.workspace.onDidChangeTextDocument(async (e) => {
+		// Do not react to undo/redo operations to avoid fighting the user's undo
+		if (e.reason === vscode.TextDocumentChangeReason.Undo || e.reason === vscode.TextDocumentChangeReason.Redo) {
+			return;
+		}
 		if (isApplyingEdit) {
 			return;
 		}
@@ -143,7 +147,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		}
 		await handlePotentialMarker(document, targetLine, editor!);
 	});
-	
+
 	const newSetCmd = vscode.commands.registerCommand('codemeta.newSet', async () => {
 		const name = await vscode.window.showInputBox({
 			prompt: 'Enter a name for the new fragment set (folder under cms/)',
@@ -319,7 +323,7 @@ async function handlePotentialMarker(document: vscode.TextDocument, lineNumber: 
 		isApplyingEdit = true;
 		await editor.edit((editBuilder) => {
 			editBuilder.insert(insertPos, ` ${id}`);
-		});
+		}, { undoStopBefore: false, undoStopAfter: false });
 	} finally {
 		isApplyingEdit = false;
 	}
@@ -338,146 +342,146 @@ async function handlePotentialMarker(document: vscode.TextDocument, lineNumber: 
 }
 
 function findMarker(lineText: string): { markerStart: number; markerEnd: number } | null {
-    // Detect markers anywhere in the line, regardless of trailing content (IDs, spaces, etc.)
-    const idx1 = lineText.indexOf('//cm');
-    if (idx1 >= 0) {
-        return { markerStart: idx1, markerEnd: idx1 + 4 };
-    }
-    const idx2 = lineText.indexOf('#cm');
-    if (idx2 >= 0) {
-        return { markerStart: idx2, markerEnd: idx2 + 3 };
-    }
-    return null;
+	// Detect markers anywhere in the line, regardless of trailing content (IDs, spaces, etc.)
+	const idx1 = lineText.indexOf('//cm');
+	if (idx1 >= 0) {
+		return { markerStart: idx1, markerEnd: idx1 + 4 };
+	}
+	const idx2 = lineText.indexOf('#cm');
+	if (idx2 >= 0) {
+		return { markerStart: idx2, markerEnd: idx2 + 3 };
+	}
+	return null;
 }
 
 function generateId(length: number): string {
-    let s = '';
-    while (s.length < length) {
-        s += Math.floor(Math.random() * 10).toString();
-    }
-    return s.slice(0, length);
+	let s = '';
+	while (s.length < length) {
+		s += Math.floor(Math.random() * 10).toString();
+	}
+	return s.slice(0, length);
 }
 
 async function ensureFragmentFile(sourceUri: vscode.Uri, id: string): Promise<{ uri: vscode.Uri; created: boolean }> {
-    const folder = vscode.workspace.getWorkspaceFolder(sourceUri) || vscode.workspace.workspaceFolders?.[0];
-    if (!folder) {
-        throw new Error('No workspace folder');
-    }
-    const cmsFolderName = vscode.workspace.getConfiguration('codemeta').get<string>('cmsFolder', 'cms');
-    const cmsFolder = vscode.Uri.joinPath(folder.uri, cmsFolderName);
-    await vscode.workspace.fs.createDirectory(cmsFolder);
-    const setFolder = vscode.Uri.joinPath(cmsFolder, activeSet || 'default');
-    await vscode.workspace.fs.createDirectory(setFolder);
-    const fragmentUri = vscode.Uri.joinPath(setFolder, `${id}.md`);
-    let created = false;
-    try {
-        await vscode.workspace.fs.stat(fragmentUri);
-    } catch {
-        created = true;
-        const now = new Date().toISOString();
-        const defaultCategory = vscode.workspace.getConfiguration('codemeta').get<string>('defaultCategory', 'INFO');
-        const contents = Buffer.from(
-            `---\n` +
-            `id: ${id}\n` +
-            `created: ${now}\n` +
-            `category: ${defaultCategory}\n` +
-            `---\n\n`
-        );
-        await vscode.workspace.fs.writeFile(fragmentUri, contents);
-    }
-    return { uri: fragmentUri, created };
+	const folder = vscode.workspace.getWorkspaceFolder(sourceUri) || vscode.workspace.workspaceFolders?.[0];
+	if (!folder) {
+		throw new Error('No workspace folder');
+	}
+	const cmsFolderName = vscode.workspace.getConfiguration('codemeta').get<string>('cmsFolder', 'cms');
+	const cmsFolder = vscode.Uri.joinPath(folder.uri, cmsFolderName);
+	await vscode.workspace.fs.createDirectory(cmsFolder);
+	const setFolder = vscode.Uri.joinPath(cmsFolder, activeSet || 'default');
+	await vscode.workspace.fs.createDirectory(setFolder);
+	const fragmentUri = vscode.Uri.joinPath(setFolder, `${id}.md`);
+	let created = false;
+	try {
+		await vscode.workspace.fs.stat(fragmentUri);
+	} catch {
+		created = true;
+		const now = new Date().toISOString();
+		const defaultCategory = vscode.workspace.getConfiguration('codemeta').get<string>('defaultCategory', 'INFO');
+		const contents = Buffer.from(
+			`---\n` +
+			`id: ${id}\n` +
+			`created: ${now}\n` +
+			`category: ${defaultCategory}\n` +
+			`---\n\n`
+		);
+		await vscode.workspace.fs.writeFile(fragmentUri, contents);
+	}
+	return { uri: fragmentUri, created };
 }
 
 async function getFragmentPreviewAndCategory(sourceUri: vscode.Uri, id: string): Promise<{ preview: string | null; categoryLabel: string }> {
-    const uri = await findAnyFragmentUri(sourceUri, id);
-    let category = 'INFO';
-    if (!uri) return { preview: null, categoryLabel: category };
-    try {
-        const data = await vscode.workspace.fs.readFile(uri);
-        const text = Buffer.from(data).toString('utf8');
-        const { body, category: parsedCat } = parseFrontmatterAndCategory(text);
-        if (parsedCat) category = parsedCat;
-        const trimmed = body.trim();
-        if (!trimmed) return { preview: null, categoryLabel: category };
-        return { preview: truncateLines(trimmed, 12, 600), categoryLabel: category };
-    } catch {
-        return { preview: null, categoryLabel: category };
-    }
+	const uri = await findAnyFragmentUri(sourceUri, id);
+	let category = 'INFO';
+	if (!uri) return { preview: null, categoryLabel: category };
+	try {
+		const data = await vscode.workspace.fs.readFile(uri);
+		const text = Buffer.from(data).toString('utf8');
+		const { body, category: parsedCat } = parseFrontmatterAndCategory(text);
+		if (parsedCat) category = parsedCat;
+		const trimmed = body.trim();
+		if (!trimmed) return { preview: null, categoryLabel: category };
+		return { preview: truncateLines(trimmed, 12, 600), categoryLabel: category };
+	} catch {
+		return { preview: null, categoryLabel: category };
+	}
 }
 
 function stripFrontmatter(text: string): string {
-    if (text.startsWith('---')) {
-        const closeIdx = text.indexOf('\n---', 3);
-        if (closeIdx !== -1) {
-            const after = text.slice(closeIdx + 4);
-            return after.replace(/^\r?\n/, '');
-        }
-    }
-    return text;
+	if (text.startsWith('---')) {
+		const closeIdx = text.indexOf('\n---', 3);
+		if (closeIdx !== -1) {
+			const after = text.slice(closeIdx + 4);
+			return after.replace(/^\r?\n/, '');
+		}
+	}
+	return text;
 }
 
 function parseFrontmatterAndCategory(text: string): { body: string; category?: string } {
-    let category: string | undefined;
-    if (text.startsWith('---')) {
-        const closeIdx = text.indexOf('\n---', 3);
-        if (closeIdx !== -1) {
-            const header = text.slice(3, closeIdx).trim();
-            const catMatch = header.match(/^\s*category:\s*(.+)$/mi);
-            if (catMatch) {
-                category = catMatch[1].trim();
-            }
-            const after = text.slice(closeIdx + 4).replace(/^\r?\n/, '');
-            return { body: after, category };
-        }
-    }
-    return { body: text, category };
+	let category: string | undefined;
+	if (text.startsWith('---')) {
+		const closeIdx = text.indexOf('\n---', 3);
+		if (closeIdx !== -1) {
+			const header = text.slice(3, closeIdx).trim();
+			const catMatch = header.match(/^\s*category:\s*(.+)$/mi);
+			if (catMatch) {
+				category = catMatch[1].trim();
+			}
+			const after = text.slice(closeIdx + 4).replace(/^\r?\n/, '');
+			return { body: after, category };
+		}
+	}
+	return { body: text, category };
 }
 
 function truncateLines(text: string, maxLines: number, maxChars: number): string {
-    const lines = text.split(/\r?\n/);
-    let out = lines.slice(0, maxLines).join('\n');
-    if (out.length > maxChars) {
-        out = out.slice(0, maxChars).trimEnd();
-    }
-    if (lines.length > maxLines || text.length > maxChars) {
-        out += '\n\n…';
-    }
-    return out;
+	const lines = text.split(/\r?\n/);
+	let out = lines.slice(0, maxLines).join('\n');
+	if (out.length > maxChars) {
+		out = out.slice(0, maxChars).trimEnd();
+	}
+	if (lines.length > maxLines || text.length > maxChars) {
+		out += '\n\n…';
+	}
+	return out;
 }
 
 async function showFragmentWithoutExplorerReveal(uri: vscode.Uri, preserveFocus: boolean): Promise<vscode.TextEditor | undefined> {
-    const explorerConfig = vscode.workspace.getConfiguration('explorer');
-    const original = explorerConfig.get<boolean>('autoReveal');
-    try {
-        if (original !== false) {
-            await explorerConfig.update('autoReveal', false, vscode.ConfigurationTarget.Workspace);
-        }
-        return await vscode.window.showTextDocument(uri, { viewColumn: vscode.ViewColumn.Beside, preview: false, preserveFocus });
-    } catch {
-        // ignore update errors, still try to open
-        return await vscode.window.showTextDocument(uri, { viewColumn: vscode.ViewColumn.Beside, preview: false, preserveFocus });
-    } finally {
-        try {
-            if (original !== false) {
-                await explorerConfig.update('autoReveal', original, vscode.ConfigurationTarget.Workspace);
-            }
-        } catch {
-            // ignore restore errors
-        }
-    }
+	const explorerConfig = vscode.workspace.getConfiguration('explorer');
+	const original = explorerConfig.get<boolean>('autoReveal');
+	try {
+		if (original !== false) {
+			await explorerConfig.update('autoReveal', false, vscode.ConfigurationTarget.Workspace);
+		}
+		return await vscode.window.showTextDocument(uri, { viewColumn: vscode.ViewColumn.Beside, preview: false, preserveFocus });
+	} catch {
+		// ignore update errors, still try to open
+		return await vscode.window.showTextDocument(uri, { viewColumn: vscode.ViewColumn.Beside, preview: false, preserveFocus });
+	} finally {
+		try {
+			if (original !== false) {
+				await explorerConfig.update('autoReveal', original, vscode.ConfigurationTarget.Workspace);
+			}
+		} catch {
+			// ignore restore errors
+		}
+	}
 }
 
 function findContentStartLine(document: vscode.TextDocument): number {
-    // After frontmatter '---' ... '---', content starts either on next line or at top if no frontmatter
-    if (document.lineCount === 0) return 0;
-    const first = document.lineAt(0).text;
-    if (first.trim() !== '---') return 0;
-    for (let i = 1; i < document.lineCount; i++) {
-        if (document.lineAt(i).text.trim() === '---') {
-            return Math.min(i + 1, document.lineCount - 1);
-        }
-    }
-    return 0;
+	// After frontmatter '---' ... '---', content starts either on next line or at top if no frontmatter
+	if (document.lineCount === 0) return 0;
+	const first = document.lineAt(0).text;
+	if (first.trim() !== '---') return 0;
+	for (let i = 1; i < document.lineCount; i++) {
+		if (document.lineAt(i).text.trim() === '---') {
+			return Math.min(i + 1, document.lineCount - 1);
+		}
+	}
+	return 0;
 }
 
 class CmLinkProvider implements vscode.DocumentLinkProvider {
@@ -501,64 +505,64 @@ class CmLinkProvider implements vscode.DocumentLinkProvider {
 }
 
 async function ensureSetFolderExists(setName: string): Promise<void> {
-    const folder = vscode.workspace.workspaceFolders?.[0];
-    if (!folder) return;
-    const cmsFolderName = vscode.workspace.getConfiguration('codemeta').get<string>('cmsFolder', 'cms');
-    const cmsFolder = vscode.Uri.joinPath(folder.uri, cmsFolderName);
-    const setFolder = vscode.Uri.joinPath(cmsFolder, setName || 'default');
-    await vscode.workspace.fs.createDirectory(setFolder);
+	const folder = vscode.workspace.workspaceFolders?.[0];
+	if (!folder) return;
+	const cmsFolderName = vscode.workspace.getConfiguration('codemeta').get<string>('cmsFolder', 'cms');
+	const cmsFolder = vscode.Uri.joinPath(folder.uri, cmsFolderName);
+	const setFolder = vscode.Uri.joinPath(cmsFolder, setName || 'default');
+	await vscode.workspace.fs.createDirectory(setFolder);
 }
 
 async function listAvailableSets(): Promise<string[]> {
-    const folder = vscode.workspace.workspaceFolders?.[0];
-    if (!folder) return ['default'];
-    const cmsFolderName = vscode.workspace.getConfiguration('codemeta').get<string>('cmsFolder', 'cms');
-    const cmsFolder = vscode.Uri.joinPath(folder.uri, cmsFolderName);
-    try {
-        await vscode.workspace.fs.createDirectory(cmsFolder);
-        const entries = await vscode.workspace.fs.readDirectory(cmsFolder);
-        const dirs = entries
-            .filter(([_, type]) => type === vscode.FileType.Directory)
-            .map(([name]) => name)
-            .filter(Boolean);
-        if (!dirs.includes('default')) dirs.unshift('default');
-        // Put current active set on top
-        const uniq = Array.from(new Set([activeSet || 'default', ...dirs]));
-        return uniq;
-    } catch {
-        return [activeSet || 'default', 'default'];
-    }
+	const folder = vscode.workspace.workspaceFolders?.[0];
+	if (!folder) return ['default'];
+	const cmsFolderName = vscode.workspace.getConfiguration('codemeta').get<string>('cmsFolder', 'cms');
+	const cmsFolder = vscode.Uri.joinPath(folder.uri, cmsFolderName);
+	try {
+		await vscode.workspace.fs.createDirectory(cmsFolder);
+		const entries = await vscode.workspace.fs.readDirectory(cmsFolder);
+		const dirs = entries
+			.filter(([_, type]) => type === vscode.FileType.Directory)
+			.map(([name]) => name)
+			.filter(Boolean);
+		if (!dirs.includes('default')) dirs.unshift('default');
+		// Put current active set on top
+		const uniq = Array.from(new Set([activeSet || 'default', ...dirs]));
+		return uniq;
+	} catch {
+		return [activeSet || 'default', 'default'];
+	}
 }
 
 async function findAnyFragmentUri(sourceUri: vscode.Uri, id: string): Promise<vscode.Uri | null> {
-    const folder = vscode.workspace.getWorkspaceFolder(sourceUri) || vscode.workspace.workspaceFolders?.[0];
-    if (!folder) return null;
-    const cmsFolderName = vscode.workspace.getConfiguration('codemeta').get<string>('cmsFolder', 'cms');
-    const cmsFolder = vscode.Uri.joinPath(folder.uri, cmsFolderName);
-    try {
-        await vscode.workspace.fs.createDirectory(cmsFolder);
-    } catch {
-        // ignore
-    }
-    // 1) Check root cms for backward compatibility
-    const rootCandidate = vscode.Uri.joinPath(cmsFolder, `${id}.md`);
-    try {
-        await vscode.workspace.fs.stat(rootCandidate);
-        return rootCandidate;
-    } catch { }
-    // 2) Check all subdirectories (sets)
-    try {
-        const entries = await vscode.workspace.fs.readDirectory(cmsFolder);
-        for (const [name, type] of entries) {
-            if (type !== vscode.FileType.Directory) continue;
-            const candidate = vscode.Uri.joinPath(cmsFolder, name, `${id}.md`);
-            try {
-                await vscode.workspace.fs.stat(candidate);
-                return candidate;
-            } catch { }
-        }
-    } catch { }
-    return null;
+	const folder = vscode.workspace.getWorkspaceFolder(sourceUri) || vscode.workspace.workspaceFolders?.[0];
+	if (!folder) return null;
+	const cmsFolderName = vscode.workspace.getConfiguration('codemeta').get<string>('cmsFolder', 'cms');
+	const cmsFolder = vscode.Uri.joinPath(folder.uri, cmsFolderName);
+	try {
+		await vscode.workspace.fs.createDirectory(cmsFolder);
+	} catch {
+		// ignore
+	}
+	// 1) Check root cms for backward compatibility
+	const rootCandidate = vscode.Uri.joinPath(cmsFolder, `${id}.md`);
+	try {
+		await vscode.workspace.fs.stat(rootCandidate);
+		return rootCandidate;
+	} catch { }
+	// 2) Check all subdirectories (sets)
+	try {
+		const entries = await vscode.workspace.fs.readDirectory(cmsFolder);
+		for (const [name, type] of entries) {
+			if (type !== vscode.FileType.Directory) continue;
+			const candidate = vscode.Uri.joinPath(cmsFolder, name, `${id}.md`);
+			try {
+				await vscode.workspace.fs.stat(candidate);
+				return candidate;
+			} catch { }
+		}
+	} catch { }
+	return null;
 }
 
 async function ensureInlinePreviewOnLine(document: vscode.TextDocument, lineNumber: number): Promise<void> {
@@ -591,7 +595,7 @@ async function ensureInlinePreviewOnLine(document: vscode.TextDocument, lineNumb
 					await editor.edit((eb) => {
 						const range = new vscode.Range(line.range.start, line.range.end);
 						eb.replace(range, newText);
-					});
+					}, { undoStopBefore: false, undoStopAfter: false });
 				} finally {
 					isApplyingEdit = false;
 				}
@@ -603,34 +607,34 @@ async function ensureInlinePreviewOnLine(document: vscode.TextDocument, lineNumb
 }
 
 function buildCategoryDecorations(): Map<string, vscode.TextEditorDecorationType> {
-    const styles = vscode.workspace.getConfiguration('codemeta').get<any[]>('categoryStyles', []);
-    const map = new Map<string, vscode.TextEditorDecorationType>();
-    for (const style of styles) {
-        const label: string = String(style.label || '').trim();
-        if (!label) continue;
-        const foreground = style.foreground || new vscode.ThemeColor('badge.foreground');
-        const background = style.background || new vscode.ThemeColor('badge.background');
-        const dec = vscode.window.createTextEditorDecorationType({
-            isWholeLine: false,
-            before: {
-                contentText: `${labelPrefix}${label}`,
-                color: foreground,
-                backgroundColor: background,
-                margin: '0 0.6em 0 0',
-                fontWeight: '600',
-                textDecoration: PILL_TEXT_DECORATION
-            }
-        });
-        map.set(label, dec);
-    }
-    return map;
+	const styles = vscode.workspace.getConfiguration('codemeta').get<any[]>('categoryStyles', []);
+	const map = new Map<string, vscode.TextEditorDecorationType>();
+	for (const style of styles) {
+		const label: string = String(style.label || '').trim();
+		if (!label) continue;
+		const foreground = style.foreground || new vscode.ThemeColor('badge.foreground');
+		const background = style.background || new vscode.ThemeColor('badge.background');
+		const dec = vscode.window.createTextEditorDecorationType({
+			isWholeLine: false,
+			before: {
+				contentText: `${labelPrefix}${label}`,
+				color: foreground,
+				backgroundColor: background,
+				margin: '0 0.6em 0 0',
+				fontWeight: '600',
+				textDecoration: PILL_TEXT_DECORATION
+			}
+		});
+		map.set(label, dec);
+	}
+	return map;
 }
 
 function getDefaultCategoryStyle(): { foreground: string | vscode.ThemeColor; background: string | vscode.ThemeColor } {
-    const styles = vscode.workspace.getConfiguration('codemeta').get<any[]>('categoryStyles', []);
-    const def = styles.find(s => String(s.label || '').toUpperCase() === 'INFO');
-    if (def) return { foreground: def.foreground, background: def.background };
-    return { foreground: new vscode.ThemeColor('badge.foreground'), background: new vscode.ThemeColor('badge.background') };
+	const styles = vscode.workspace.getConfiguration('codemeta').get<any[]>('categoryStyles', []);
+	const def = styles.find(s => String(s.label || '').toUpperCase() === 'INFO');
+	if (def) return { foreground: def.foreground, background: def.background };
+	return { foreground: new vscode.ThemeColor('badge.foreground'), background: new vscode.ThemeColor('badge.background') };
 }
 
 async function summarizeCurrentSet(): Promise<void> {
@@ -692,7 +696,7 @@ async function summarizeCurrentSet(): Promise<void> {
 			const parsed = parseFrontmatterAndCategory(text);
 			if (parsed.category) category = parsed.category;
 			body = parsed.body;
-		} catch {}
+		} catch { }
 		const fragRel = vscode.workspace.asRelativePath(fragUri);
 		const fragAbsPath = fragUri.fsPath.replace(/\\/g, '/');
 		const fragLink = encodeURI(`vscode://file/${fragAbsPath}`);
@@ -762,7 +766,7 @@ async function summarizeCurrentSetTxt(): Promise<void> {
 				if (!id || !idSet.has(id)) continue;
 				occurrences.get(id)!.push({ uri, line: i + 1 });
 			}
-		} catch {}
+		} catch { }
 	}
 
 	function escapeTomlString(value: string): string {
@@ -788,7 +792,7 @@ async function summarizeCurrentSetTxt(): Promise<void> {
 			const parsed = parseFrontmatterAndCategory(text);
 			if (parsed.category) category = parsed.category;
 			body = parsed.body;
-		} catch {}
+		} catch { }
 		const fragRel = vscode.workspace.asRelativePath(fragUri);
 
 		out += `[[fragments]]\n`;

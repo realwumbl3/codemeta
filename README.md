@@ -107,7 +107,7 @@ Example occurrence link format in Markdown: `vscode://file/<abs-path>:<line>` so
 
 ## Requirements
 
--   VS Code `^1.105.0`
+-   VS Code `^1.92.0`
 -   Works in single- or multi-root workspaces (files are placed under the nearest workspace folder)
 
 ## Install (from source)
