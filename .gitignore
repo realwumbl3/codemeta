@@ -8,6 +8,6 @@ out
 
 *.psd
 
-./testbase/
-
 package-lock.json
+
+testbase/**
