@@ -1,0 +1,129 @@
+{
+  "name": "codemeta",
+  "displayName": "CodeMeta",
+  "description": "Base VS Code extension blueprint",
+  "version": "0.0.1",
+  "publisher": "your-publisher-id",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.92.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "codemeta.createFragment",
+        "title": "CodeMeta: Create Fragment for Line"
+      },
+      {
+        "command": "codemeta.openFragmentAtLine",
+        "title": "CodeMeta: Open Fragment at Line"
+      },
+      {
+        "command": "codemeta.newSet",
+        "title": "CodeMeta: New Fragment Set"
+      },
+      {
+        "command": "codemeta.switchSet",
+        "title": "CodeMeta: Switch Active Fragment Set"
+      },
+      {
+        "command": "codemeta.summarizeSet",
+        "title": "CodeMeta: Summarize Current Set (Markdown)"
+      },
+      {
+        "command": "codemeta.summarizeSetTxt",
+        "title": "CodeMeta: Summarize Current Set (TOML)"
+      }
+    ],
+    "configuration": {
+      "title": "CodeMeta",
+      "properties": {
+        "codemeta.cmsFolder": {
+          "type": "string",
+          "default": "cms",
+          "description": "Folder at workspace root for Markdown fragments"
+        },
+        "codemeta.idLength": {
+          "type": "number",
+          "default": 10,
+          "minimum": 6,
+          "maximum": 32,
+          "description": "Length of numeric ID appended to cm comments"
+        },
+        "codemeta.defaultCategory": {
+          "type": "string",
+          "default": "INFO",
+          "description": "Default category assigned to new fragments"
+        },
+        "codemeta.categoryStyles": {
+          "type": "array",
+          "description": "List of categories and their pill colors",
+          "default": [
+            {
+              "label": "INFO",
+              "foreground": "#0a3069",
+              "background": "#cadbfd"
+            },
+            {
+              "label": "BUG",
+              "foreground": "#58151c",
+              "background": "#ffebe9"
+            },
+            {
+              "label": "TODO",
+              "foreground": "#302d11",
+              "background": "#fff8c5"
+            },
+            {
+              "label": "NOTE",
+              "foreground": "#24292f",
+              "background": "#eaeef2"
+            }
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "description": "Category label"
+              },
+              "foreground": {
+                "type": "string",
+                "description": "Text color (CSS color)"
+              },
+              "background": {
+                "type": "string",
+                "description": "Background color (CSS color)"
+              }
+            },
+            "required": [
+              "label",
+              "foreground",
+              "background"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p .",
+    "watch": "tsc -p . -w",
+    "package": "vsce package",
+    "publish": "vsce publish"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.0",
+    "@types/vscode": "^1.105.0",
+    "@vscode/vsce": "^3.6.2",
+    "typescript": "^5.9.3"
+  }
+}

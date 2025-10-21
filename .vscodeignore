@@ -1,0 +1,15 @@
+.vscode/**
+.github/**
+**/*.map
+**/*.ts
+node_modules/**
+!node_modules/vscode-languageclient/**
+!node_modules/vscode-jsonrpc/**
+out/**
+test/**
+**/*.test.*
+**/*.spec.*
+CHANGELOG.md
+.env
+
+
