@@ -21,6 +21,24 @@
   ],
   "icon": "./img/icon.png",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "codemeta",
+          "title": "CodeMeta",
+          "icon": "./img/min-e.png"
+        }
+      ]
+    },
+    "views": {
+      "codemeta": [
+        {
+          "id": "codemeta.sidePanel",
+          "name": "CodeMeta",
+          "type": "webview"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "codemeta.createFragment",
