@@ -2,7 +2,7 @@
     <img src="./img/bannerJ.jpg"/>
 </div>
 
-CodeMeta lets you turn lightweight inline comment markers into linked Markdown fragments stored in your workspace. It adds colorful category "pills" in the editor gutter, auto-inserts stable numeric IDs, shows inline previews in the pill, and can summarize all fragments in a set.
+CodeMeta lets you turn lightweight inline comment markers into linked Markdown fragments stored in your workspace. It adds colorful category "pills" in the editor gutter, auto-inserts numeric IDs, shows inline previews in the pill, and can summarize all fragments in a set. A side panel in the Activity Bar provides quick actions.
 
 ### Why
 
@@ -13,30 +13,31 @@ CodeMeta lets you turn lightweight inline comment markers into linked Markdown f
 
 ## Quick start
 
-1. In a code file, type a marker and a space after it:
+1. In a code file, type a marker and then a space or underscore right after it:
 
 ```js
-//cm␣
+//codemeta␣   or   //cm␣
 ```
 
 or for Python/shell:
 
 ```py
-#cm␣
+#codemeta␣   or   #cm␣
 ```
 
-2. On the space, CodeMeta will:
+2. On the space or underscore, CodeMeta will:
 
--   Append a numeric ID, e.g. `//cm 1234567890`
--   Create `cms/<active-set>/<id>.md` with frontmatter
+-   Replace the marker with a bracketed tag and a numeric ID, e.g. `//codemeta[0]`
+-   Create `.cms/<active-set>/<id>.md` with frontmatter
 -   Open the fragment beside the source editor
 -   Display a category pill on the line with the first fragment line; hover to see more
 
-3. Click the `cm` marker or run the command to reopen the fragment any time.
+3. Click the `codemeta` marker or run the command to reopen the fragment any time.
 
 ## What gets created
 
--   File: `cms/<set>/<id>.md`
+-   File: `.cms/<set>/<id>.md`
+-   State: `.cms/state.json` (tracks the next numeric ID)
 -   Frontmatter:
 
 ```markdown
@@ -53,22 +54,24 @@ Change `category` as you like (e.g., `BUG`, `TODO`, `NOTE`) and customize colors
 
 ## Features
 
--   **Markers**: `//cm` (C/JS-like) and `#cm` (Python/shell)
--   **Auto-ID**: 6–32 digit numeric IDs (default 10)
+-   **Markers**: `//codemeta` and `#codemeta` (preferred). Legacy `//cm` and `#cm` still work and are auto-upgraded on trigger.
+-   **Auto-ID**: Sequential numeric IDs persisted in `.cms/state.json`
 -   **Pill preview**: first line shown inside the pill (no text inserted into your file)
 -   **Hover preview**: pill tooltip shows a multi-line preview
--   **Clickable marker**: Ctrl/Cmd+Click on `cm` opens/creates the fragment
--   **Fragment sets**: organize fragments under `cms/<set>/`; switch sets quickly
+-   **Clickable marker**: Ctrl/Cmd+Click on the marker opens/creates the fragment
+-   **Fragment sets**: organize fragments under `.cms/<set>/`; switch sets quickly
 -   **Summaries**: generate `SUMMARY.md` and `SUMMARY.toml` for the active set with source occurrences
+ -   **Side Panel**: Activity Bar view with quick actions (New/Switch Set, Summarize)
 
 ## Commands
 
 -   **CodeMeta: Create Fragment for Line** (`codemeta.createFragment`) — Force-create for the current line if a marker exists
 -   **CodeMeta: Open Fragment at Line** (`codemeta.openFragmentAtLine`) — Open or create the fragment at the cursor line
--   **CodeMeta: New Fragment Set** (`codemeta.newSet`) — Create and switch to a new `cms/<set>`
+-   **CodeMeta: New Fragment Set** (`codemeta.newSet`) — Create and switch to a new `.cms/<set>`
 -   **CodeMeta: Switch Active Fragment Set** (`codemeta.switchSet`) — Switch between sets
--   **CodeMeta: Summarize Current Set (Markdown)** (`codemeta.summarizeSet`) — Writes `cms/<set>/SUMMARY.md`
--   **CodeMeta: Summarize Current Set (TOML)** (`codemeta.summarizeSetTxt`) — Writes `cms/<set>/SUMMARY.toml`
+-   **CodeMeta: Summarize Current Set (Markdown)** (`codemeta.summarizeSet`) — Writes `.cms/<set>/SUMMARY.md`
+-   **CodeMeta: Summarize Current Set (TOML)** (`codemeta.summarizeSetTxt`) — Writes `.cms/<set>/SUMMARY.toml`
+-   **CodeMeta: Upgrade Legacy Markers to codemeta[id]** (`codemeta.upgradeLegacyMarkers`) — Convert `//cm 123` or `#cm 123` to `codemeta[123]` across your workspace
 
 ## Settings
 
@@ -76,8 +79,8 @@ Add to your workspace `settings.json`:
 
 ```json
 {
-    "codemeta.cmsFolder": "cms", // Folder at workspace root
-    "codemeta.idLength": 10, // 6–32
+    "codemeta.cmsFolder": ".cms", // Folder at workspace root
+    "codemeta.idLength": 10, // Reserved; IDs are sequential and may grow in length
     "codemeta.defaultCategory": "INFO",
     "codemeta.categoryStyles": [
         { "label": "INFO", "foreground": "#0a3069", "background": "#cadbfd" },
@@ -93,8 +96,8 @@ Unknown categories are rendered with VS Code badge colors by default.
 ## Working with sets
 
 -   The active set defaults to `default` and is remembered per workspace
--   Create a new set via "New Fragment Set"; files go to `cms/<your-set>/`
--   Switch sets with "Switch Active Fragment Set"
+-   Create a new set via "New Fragment Set"; files go to `.cms/<your-set>/`
+-   Switch sets with "Switch Active Fragment Set" or via the side panel
 
 ## Summaries
 

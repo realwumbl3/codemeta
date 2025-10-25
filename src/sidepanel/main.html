@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+</head>
+
+<body>
+    <div id="app"></div>
+    <script>
+        const { html } = zyX;
+        class App {
+            constructor() {
+                this.vscode = acquireVsCodeApi();
+                this.items = new zyX.LiveList([]);
+                this.render().appendTo(document.getElementById("app") || document.body);
+                window.addEventListener("message", this.onMessage.bind(this));
+                this.vscode.postMessage({ type: "fetchList" });
+            }
+
+            render() {
+                return html`
+                        <div class="header">CodeMeta 1.0.9 html-0.0.1</div>
+                        <div class="row">Active set: <span this="activeSet" class="badge"></span></div>
+                        <div class="row">
+                            <button zyx-click=${() => this.vscode.postMessage({ command: "codemeta.newSet" })}>
+                                New Set
+                            </button>
+                            <button zyx-click=${() => this.vscode.postMessage({ command: "codemeta.switchSet" })}>
+                                Switch Set
+                            </button>
+                        </div>
+                        <div class="row">
+                            <button
+                                class="primary"
+                                zyx-click=${() => this.vscode.postMessage({ command: "codemeta.summarizeSet" })}
+                            >
+                                Summarize (Markdown)
+                            </button>
+                            <button
+                                class="primary"
+                                zyx-click=${() => this.vscode.postMessage({ command: "codemeta.summarizeSetTxt" })}
+                            >
+                                Summarize (TOML)
+                            </button>
+                        </div>
+                        <div class="row">
+                            <div class="header">Fragments</div>
+                            <button zyx-click=${() => this.vscode.postMessage({ type: "fetchList" })}>Refresh</button>
+                            <ul
+                                this="list"
+                                class="list"
+                                zyx-live-list=${{ list: this.items, compose: this.renderItem }}
+                            ></ul>
+                        </div>
+                    `.bind(this);
+            }
+
+            renderItem = (it) => {
+                return html` <li
+                        class="item"
+                        zyx-click=${() => this.vscode.postMessage({ type: "openFragment", id: it.id })}
+                    >
+                        <div class="item-header">
+                            <button
+                                class="toggle"
+                                aria-label="Toggle references"
+                                zyx-click=${(e) => {
+                        const li = e.el.closest("li");
+                        const refsUl = li.querySelector("#refs-" + it.id);
+                        const expanded = e.el.classList.contains("expanded");
+                        if (expanded) {
+                            e.el.classList.remove("expanded");
+                            refsUl.innerHTML = "";
+                            refsUl.style.display = "none";
+                        } else {
+                            e.el.classList.add("expanded");
+                            refsUl.style.display = "";
+                            this.vscode.postMessage({ type: "fetchRefs", id: it.id });
+                        }
+                    }}
+                            >
+                                <svg viewBox="0 0 16 16" aria-hidden="true">
+                                    <path fill="currentColor" d="M6 3l6 5-6 5z" />
+                                </svg>
+                            </button>
+                            <span class="count" id=${"count-" + it.id}>${String(it.count || 0)} ${it.count > 0 ? "refs" : ""}</span>
+                            <div class="meta">
+                                <span class="id">#${it.id}</span>
+                                <span class="cat">${it.category}</span>
+                            </div>
+                        </div>
+                        <div class="title">${it.title || "(empty)"}</div>
+                        <ul class="refs" id=${"refs-" + it.id} style="display:none"></ul>
+                    </li>`;
+            };
+
+            onMessage(event) {
+                const msg = event.data;
+                if (msg && msg.type === "activeSet") {
+                    this.activeSet.textContent = String(msg.value || "default");
+                    this.vscode.postMessage({ type: "fetchList" });
+                }
+                if (msg && msg.type === "list") {
+                    const arr = Array.isArray(msg.items) ? msg.items : [];
+                    this.items.clear();
+                    this.items.push(...arr);
+                }
+                if (msg && msg.type === "refs") {
+                    const list = document.getElementById("refs-" + msg.id);
+                    if (!list) return;
+                    list.innerHTML = "";
+                    const itemsArr = Array.isArray(msg.items) ? msg.items : [];
+                    const frag = document.createDocumentFragment();
+                    for (const r of itemsArr) {
+                        const li = document.createElement("li");
+                        li.className = "ref";
+                        const btn = document.createElement("button");
+                        btn.className = "ref-link";
+                        btn.setAttribute("data-uri", r.uri);
+                        btn.setAttribute("data-line", String(r.line));
+                        btn.textContent = r.rel + ":" + r.line;
+                        btn.addEventListener("click", (e) => {
+                            e.stopPropagation();
+                            this.vscode.postMessage({
+                                type: "openLocation",
+                                uri: btn.getAttribute("data-uri"),
+                                line: Number(btn.getAttribute("data-line")),
+                            });
+                        });
+                        li.appendChild(btn);
+                        frag.appendChild(li);
+                    }
+                    list.appendChild(frag);
+                }
+            }
+        }
+
+        new App();
+    </script>
+</body>
+<style>
+    :root {
+        color-scheme: var(--vscode-colorScheme);
+    }
+
+    body {
+        font-family: var(--vscode-font-family);
+        font-size: 13px;
+        padding: 12px;
+        color: var(--vscode-foreground);
+    }
+
+    button {
+        margin-right: 6px;
+        margin-top: 6px;
+        padding: 4px 10px;
+        background: var(--vscode-button-secondaryBackground);
+        border: 1px solid var(--vscode-button-border, transparent);
+        border-radius: 6px;
+        cursor: pointer;
+    }
+
+    button:hover {
+        background: var(--vscode-button-secondaryHoverBackground);
+    }
+
+    button:focus {
+        outline: 1px solid var(--vscode-focusBorder);
+        outline-offset: 1px;
+    }
+
+    button.primary {
+        background: var(--vscode-button-background);
+        color: var(--vscode-button-foreground);
+        border-color: var(--vscode-button-border, transparent);
+    }
+
+    button.primary:hover {
+        background: var(--vscode-button-hoverBackground);
+    }
+
+    .header {
+        font-weight: 600;
+        margin-bottom: 8px;
+    }
+
+    .row {
+        margin: 8px 0;
+    }
+
+    .badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: var(--vscode-badge-background);
+        color: var(--vscode-badge-foreground);
+        font-weight: 600;
+    }
+
+    .list {
+        list-style: none;
+        padding-left: 0;
+        margin: 6px 0 0 0;
+    }
+
+    .item {
+        position: relative;
+        padding: 8px 30px 8px 8px;
+        border: 1px solid var(--vscode-contrastActiveBorder, transparent);
+        border-radius: 6px;
+        margin-bottom: 6px;
+        background: var(--vscode-editorWidget-background);
+    }
+
+    .item:hover {
+        background: var(--vscode-list-hoverBackground);
+    }
+
+    .item-header {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .count {
+        font-size: 11px;
+        color: var(--vscode-descriptionForeground);
+        background: var(--vscode-badge-background);
+        color: var(--vscode-badge-foreground);
+        padding: 0 6px;
+        border-radius: 999px;
+        line-height: 18px;
+        height: 18px;
+        display: inline-flex;
+        align-items: center;
+    }
+
+    .item .meta {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+    }
+
+    .item .id {
+        font-weight: 600;
+        color: var(--vscode-foreground);
+    }
+
+    .item .cat {
+        display: inline-block;
+        padding: 0 6px;
+        border-radius: 999px;
+        background: var(--vscode-badge-background);
+        color: var(--vscode-badge-foreground);
+        font-weight: 600;
+    }
+
+    .item .title {
+        color: var(--vscode-foreground);
+        font-size: 12px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-top: 2px;
+    }
+
+    .toggle {
+        position: absolute;
+        right: 6px;
+        top: 6px;
+        width: 18px;
+        height: 18px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        background: transparent;
+        border: none;
+        color: var(--vscode-descriptionForeground);
+        opacity: 0.8;
+        cursor: pointer;
+        transition: transform 120ms ease, opacity 120ms ease, color 120ms ease;
+    }
+
+    .toggle:hover {
+        opacity: 1;
+        color: var(--vscode-foreground);
+    }
+
+    .toggle:focus {
+        outline: 1px solid var(--vscode-focusBorder);
+        border-radius: 3px;
+    }
+
+    .toggle svg {
+        width: 12px;
+        height: 12px;
+        pointer-events: none;
+    }
+
+    .toggle.expanded {
+        transform: rotate(90deg);
+    }
+
+    .refs {
+        list-style: none;
+        padding-left: 18px;
+        margin: 6px 0 0 0;
+    }
+
+    .ref {
+        font-size: 12px;
+        color: var(--vscode-foreground);
+        margin: 2px 0;
+    }
+
+    .ref-link {
+        background: transparent;
+        border: none;
+        color: var(--vscode-textLink-foreground);
+        padding: 0;
+        cursor: pointer;
+    }
+
+    .ref-link:hover {
+        text-decoration: underline;
+    }
+</style>
+
+</html>

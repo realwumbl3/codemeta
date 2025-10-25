@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { findMarker, extractIdAfterMarkerText, parseFrontmatterAndCategory } from './helper';
+import { findMarker, extractIdAfterMarkerText, parseFrontmatterAndCategory, getCmsFolderUri, getCmsFolderName } from './helper';
 import { getActiveSet } from './globals';
 
 export async function summarizeSetMarkdown(activeSetName?: string): Promise<void> {
@@ -7,22 +7,21 @@ export async function summarizeSetMarkdown(activeSetName?: string): Promise<void
 	if (!folder) {
 		throw new Error('No workspace folder');
 	}
-	const cmsFolderName = vscode.workspace.getConfiguration('codemeta').get<string>('cmsFolder', 'cms');
-	const cmsFolder = vscode.Uri.joinPath(folder.uri, cmsFolderName);
+	const cmsFolder = getCmsFolderUri(folder);
 	await vscode.workspace.fs.createDirectory(cmsFolder);
 	const setName = activeSetName || getActiveSet() || 'default';
 	const setFolder = vscode.Uri.joinPath(cmsFolder, setName);
 	await vscode.workspace.fs.createDirectory(setFolder);
 	const entries = await vscode.workspace.fs.readDirectory(setFolder);
-	const ids: string[] = entries
-		.filter(([name, type]) => type === vscode.FileType.File && /^(\d{6,32})\.md$/i.test(name))
+    const ids: string[] = entries
+		.filter(([name, type]) => type === vscode.FileType.File && /^(\d{1,32})\.md$/i.test(name))
 		.map(([name]) => name.replace(/\.md$/i, ''));
 	const idSet = new Set(ids);
 
 	const occurrences = new Map<string, { uri: vscode.Uri; line: number }[]>();
 	for (const id of ids) occurrences.set(id, []);
 
-	const exclude = `{**/node_modules/**,**/.git/**,**/dist/**,**/out/**,**/${cmsFolderName}/**}`;
+	const exclude = `{**/node_modules/**,**/.git/**,**/dist/**,**/out/**,**/${getCmsFolderName()}/**}`;
 	const files = await vscode.workspace.findFiles('**/*', exclude);
 	for (const uri of files) {
 		try {
@@ -97,22 +96,21 @@ export async function summarizeSetToml(activeSetName?: string): Promise<void> {
 	if (!folder) {
 		throw new Error('No workspace folder');
 	}
-	const cmsFolderName = vscode.workspace.getConfiguration('codemeta').get<string>('cmsFolder', 'cms');
-	const cmsFolder = vscode.Uri.joinPath(folder.uri, cmsFolderName);
+	const cmsFolder = getCmsFolderUri(folder);
 	await vscode.workspace.fs.createDirectory(cmsFolder);
 	const setName = activeSetName || getActiveSet() || 'default';
 	const setFolder = vscode.Uri.joinPath(cmsFolder, setName);
 	await vscode.workspace.fs.createDirectory(setFolder);
 	const entries = await vscode.workspace.fs.readDirectory(setFolder);
-	const ids: string[] = entries
-		.filter(([name, type]) => type === vscode.FileType.File && /^(\d{6,32})\.md$/i.test(name))
+    const ids: string[] = entries
+		.filter(([name, type]) => type === vscode.FileType.File && /^(\d{1,32})\.md$/i.test(name))
 		.map(([name]) => name.replace(/\.md$/i, ''));
 	const idSet = new Set(ids);
 
 	const occurrences = new Map<string, { uri: vscode.Uri; line: number }[]>();
 	for (const id of ids) occurrences.set(id, []);
 
-	const exclude = `{**/node_modules/**,**/.git/**,**/dist/**,**/out/**,**/${cmsFolderName}/**}`;
+	const exclude = `{**/node_modules/**,**/.git/**,**/dist/**,**/out/**,**/${getCmsFolderName()}/**}`;
 	const files = await vscode.workspace.findFiles('**/*', exclude);
 	for (const uri of files) {
 		try {

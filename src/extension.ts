@@ -6,7 +6,8 @@ import {
 	debounce,
 	extractIdAfterMarkerText,
 	findMarker,
-	generateId,
+	allocateNextId,
+	getCmsFolderName,
 	findContentStartLine,
 	ensureSetFolderExists,
 	listAvailableSets,
@@ -57,19 +58,19 @@ export function activate(context: vscode.ExtensionContext): void {
 		if (!editor || editor.document.uri.toString() !== e.document.uri.toString()) {
 			return;
 		}
-		// Try to handle marker creation only when a space is typed immediately after the marker with no existing ID
-		if (e.contentChanges.length === 1 && e.contentChanges[0].text === ' ') {
+		// Trigger on space or underscore immediately after the marker
+		if (e.contentChanges.length === 1 && (e.contentChanges[0].text === ' ' || e.contentChanges[0].text === '_')) {
 			const ch = e.contentChanges[0];
 			const ln = ch.range.start.line;
 			const pos = ch.range.start.character; // position in pre-change line
 			const newLine = e.document.lineAt(ln).text;
 			let preLine = newLine;
-			if (pos <= newLine.length && newLine.charAt(pos) === ' ') {
+			if (pos <= newLine.length && newLine.charAt(pos) === ch.text) {
 				preLine = newLine.slice(0, pos) + newLine.slice(pos + 1);
 			}
 			const markerPre = findMarker(preLine);
 			if (markerPre && pos === markerPre.markerEnd) {
-				const afterPre = preLine.slice(markerPre.markerEnd);
+		const afterPre = preLine.slice(markerPre.markerEnd);
 				const preId = extractIdAfterMarkerText(afterPre);
 				if (!preId) {
 					await handlePotentialMarker(e.document, ln, editor);
@@ -187,6 +188,32 @@ export function activate(context: vscode.ExtensionContext): void {
 		}
 	});
 
+	const upgradeLegacyCmd = vscode.commands.registerCommand('codemeta.upgradeLegacyMarkers', async () => {
+		try {
+			const exclude = `{**/node_modules/**,**/.git/**,**/dist/**,**/out/**,**/${getCmsFolderName()}/**}`;
+			const files = await vscode.workspace.findFiles('**/*', exclude);
+			let changedFiles = 0;
+			for (const uri of files) {
+				try {
+					const data = await vscode.workspace.fs.readFile(uri);
+					const text = Buffer.from(data).toString('utf8');
+					let updated = text
+						.replace(/\/\/cm\s+(\d{1,32})/g, '//codemeta[$1]')
+						.replace(/#cm\s+(\d{1,32})/g, '#codemeta[$1]')
+						.replace(/\/\/codemeta\s+\[(\d{1,32})\]/g, '//codemeta[$1]')
+						.replace(/#codemeta\s+\[(\d{1,32})\]/g, '#codemeta[$1]');
+					if (updated !== text) {
+						await vscode.workspace.fs.writeFile(uri, Buffer.from(updated, 'utf8'));
+						changedFiles++;
+					}
+				} catch { /* ignore file */ }
+			}
+			vscode.window.showInformationMessage(`CodeMeta: Upgraded markers in ${changedFiles} file(s).`);
+		} catch (err: any) {
+			vscode.window.showErrorMessage(`CodeMeta: Failed to upgrade markers: ${err?.message || String(err)}`);
+		}
+	});
+
 	// No CodeLens – we only show the pill decoration and a clickable link on the marker text
 	const linkProvider = new CmLinkProvider();
 	const linkReg1 = vscode.languages.registerDocumentLinkProvider({ scheme: 'file' }, linkProvider);
@@ -266,7 +293,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
 	debouncedRefresh = debounce(refreshPills, 150);
 
-	context.subscriptions.push(createFragmentCmd, changeListener, openFragmentCmd, newSetCmd, switchSetCmd, summarizeCmd, summarizeTxtCmd, linkReg1, linkReg2, refreshOnActive, refreshOnConfig);
+	context.subscriptions.push(createFragmentCmd, changeListener, openFragmentCmd, newSetCmd, switchSetCmd, summarizeCmd, summarizeTxtCmd, upgradeLegacyCmd, linkReg1, linkReg2, refreshOnActive, refreshOnConfig);
 
 	// Initial render
 	refreshPills();
@@ -293,14 +320,19 @@ async function handlePotentialMarker(document: vscode.TextDocument, lineNumber: 
 	}
 
 	const idLen = vscode.workspace.getConfiguration('codemeta').get<number>('idLength', 10);
-	const id = generateId(Math.max(ID_MIN, Math.min(ID_MAX, idLen || 10)));
+	const id = await allocateNextId(Math.max(ID_MIN, Math.min(ID_MAX, idLen || 10)));
 
-	const insertPos = new vscode.Position(lineNumber, markerEnd);
+	const insertPos = new vscode.Position(lineNumber, markerStart);
 
 	try {
 		isApplyingEdits = true;
 		await editor.edit((editBuilder) => {
-			editBuilder.insert(insertPos, ` ${id}`);
+			// Replace the marker and any immediate trailing space/underscore with standardized tag
+			const end = new vscode.Position(lineNumber, markerEnd);
+			const replaceRange = new vscode.Range(insertPos, end);
+			const isHash = text.startsWith('#', markerStart);
+			const prefix = isHash ? '#codemeta' : '//codemeta';
+			editBuilder.replace(replaceRange, `${prefix}[${id}]`);
 		}, { undoStopBefore: false, undoStopAfter: false });
 	} finally {
 		isApplyingEdits = false;
@@ -327,7 +359,7 @@ class CmLinkProvider implements vscode.DocumentLinkProvider {
 			const line = document.lineAt(i);
 			const markerInfo = findMarker(line.text);
 			if (!markerInfo) continue;
-			const range = new vscode.Range(i, markerInfo.markerStart, i, markerInfo.markerEnd);
+		const range = new vscode.Range(i, markerInfo.markerStart, i, markerInfo.markerEnd);
 			const target = vscode.Uri.parse(`command:codemeta.openFragmentAtLine?${encodeURIComponent(JSON.stringify([document.uri.toString(), i]))}`);
 			const link = new vscode.DocumentLink(range, target);
 			// Add a clearer tooltip instead of the default "Execute command (Ctrl+Click)"

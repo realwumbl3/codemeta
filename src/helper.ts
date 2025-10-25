@@ -1,6 +1,13 @@
 import * as vscode from 'vscode';
 import { getActiveSet } from './globals';
 
+export function getCmsFolderName(): string {
+	return vscode.workspace.getConfiguration('codemeta').get<string>('cmsFolder', '.cms');
+}
+export function getCmsFolderUri(folder: vscode.WorkspaceFolder): vscode.Uri {
+	return vscode.Uri.joinPath(folder.uri, getCmsFolderName());
+}
+
 export function debounce<T extends (...args: any[]) => void>(fn: T, delayMs: number): (...args: Parameters<T>) => void {
 	let timer: NodeJS.Timeout | undefined;
 	return (...args: Parameters<T>) => {
@@ -10,24 +17,39 @@ export function debounce<T extends (...args: any[]) => void>(fn: T, delayMs: num
 }
 
 function idRegex(): RegExp {
-	return /^\s+(\d{6,32})\b/;
+	return /^\s+(\d{1,32})\b/;
 }
 
 export function extractIdAfterMarkerText(afterMarkerText: string): string | null {
-	const match = afterMarkerText.match(idRegex());
-	return match ? match[1] : null;
+    // New preferred format: [123]
+    const bracket = afterMarkerText.match(/^\[(\d{1,32})\]/);
+    if (bracket) return bracket[1];
+    // Legacy format: whitespace + digits
+    const match = afterMarkerText.match(idRegex());
+    return match ? match[1] : null;
 }
 
 export function findMarker(lineText: string): { markerStart: number; markerEnd: number } | null {
-	const idx1 = lineText.indexOf('//cm');
-	if (idx1 >= 0) {
-		return { markerStart: idx1, markerEnd: idx1 + 4 };
-	}
-	const idx2 = lineText.indexOf('#cm');
-	if (idx2 >= 0) {
-		return { markerStart: idx2, markerEnd: idx2 + 3 };
-	}
-	return null;
+    // Prefer explicit codemeta markers, but keep legacy cm for triggers
+    const idxCodemetaSlash = lineText.indexOf('//codemeta');
+    if (idxCodemetaSlash >= 0) {
+        // length of "//codemeta" is 10
+        return { markerStart: idxCodemetaSlash, markerEnd: idxCodemetaSlash + 10 };
+    }
+    const idxCodemetaHash = lineText.indexOf('#codemeta');
+    if (idxCodemetaHash >= 0) {
+        // length of "#codemeta" is 9
+        return { markerStart: idxCodemetaHash, markerEnd: idxCodemetaHash + 9 };
+    }
+    const idx1 = lineText.indexOf('//cm');
+    if (idx1 >= 0) {
+        return { markerStart: idx1, markerEnd: idx1 + 4 };
+    }
+    const idx2 = lineText.indexOf('#cm');
+    if (idx2 >= 0) {
+        return { markerStart: idx2, markerEnd: idx2 + 3 };
+    }
+    return null;
 }
 
 export function generateId(length: number): string {
@@ -36,6 +58,44 @@ export function generateId(length: number): string {
 		s += Math.floor(Math.random() * 10).toString();
 	}
 	return s.slice(0, length);
+}
+
+type CmsState = { nextId: number };
+
+async function readCmsState(folder: vscode.WorkspaceFolder): Promise<CmsState> {
+    const cmsFolder = getCmsFolderUri(folder);
+    await vscode.workspace.fs.createDirectory(cmsFolder);
+    const stateUri = vscode.Uri.joinPath(cmsFolder, 'state.json');
+    try {
+        const data = await vscode.workspace.fs.readFile(stateUri);
+        const text = Buffer.from(data).toString('utf8');
+        const parsed = JSON.parse(text);
+        const nextId = typeof parsed?.nextId === 'number' && isFinite(parsed.nextId) && parsed.nextId >= 0 ? parsed.nextId : 0;
+        return { nextId };
+    } catch {
+        return { nextId: 0 };
+    }
+}
+
+async function writeCmsState(folder: vscode.WorkspaceFolder, state: CmsState): Promise<void> {
+    const cmsFolder = getCmsFolderUri(folder);
+    await vscode.workspace.fs.createDirectory(cmsFolder);
+    const stateUri = vscode.Uri.joinPath(cmsFolder, 'state.json');
+    const text = JSON.stringify({ nextId: state.nextId });
+    await vscode.workspace.fs.writeFile(stateUri, Buffer.from(text, 'utf8'));
+}
+
+export async function allocateNextId(length: number): Promise<string> {
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    if (!folder) {
+        throw new Error('No workspace folder');
+    }
+    const state = await readCmsState(folder);
+    const idNumber = state.nextId || 0;
+    const id = String(idNumber);
+    state.nextId = idNumber + 1;
+    await writeCmsState(folder, state);
+    return id;
 }
 
 export function parseFrontmatterAndCategory(text: string): { body: string; category?: string } {
@@ -82,8 +142,7 @@ export function findContentStartLine(document: vscode.TextDocument): number {
 export async function ensureSetFolderExists(setName: string): Promise<void> {
 	const folder = vscode.workspace.workspaceFolders?.[0];
 	if (!folder) return;
-	const cmsFolderName = vscode.workspace.getConfiguration('codemeta').get<string>('cmsFolder', 'cms');
-	const cmsFolder = vscode.Uri.joinPath(folder.uri, cmsFolderName);
+	const cmsFolder = getCmsFolderUri(folder);
 	const setFolder = vscode.Uri.joinPath(cmsFolder, setName || 'default');
 	await vscode.workspace.fs.createDirectory(setFolder);
 }
@@ -91,8 +150,7 @@ export async function ensureSetFolderExists(setName: string): Promise<void> {
 export async function listAvailableSets(): Promise<string[]> {
 	const folder = vscode.workspace.workspaceFolders?.[0];
 	if (!folder) return ['default'];
-	const cmsFolderName = vscode.workspace.getConfiguration('codemeta').get<string>('cmsFolder', 'cms');
-	const cmsFolder = vscode.Uri.joinPath(folder.uri, cmsFolderName);
+	const cmsFolder = getCmsFolderUri(folder);
 	try {
 		await vscode.workspace.fs.createDirectory(cmsFolder);
 		const entries = await vscode.workspace.fs.readDirectory(cmsFolder);
@@ -111,8 +169,7 @@ export async function listAvailableSets(): Promise<string[]> {
 export async function findAnyFragmentUri(sourceUri: vscode.Uri, id: string): Promise<vscode.Uri | null> {
 	const folder = vscode.workspace.getWorkspaceFolder(sourceUri) || vscode.workspace.workspaceFolders?.[0];
 	if (!folder) return null;
-	const cmsFolderName = vscode.workspace.getConfiguration('codemeta').get<string>('cmsFolder', 'cms');
-	const cmsFolder = vscode.Uri.joinPath(folder.uri, cmsFolderName);
+	const cmsFolder = getCmsFolderUri(folder);
 	try {
 		await vscode.workspace.fs.createDirectory(cmsFolder);
 	} catch { }
@@ -140,8 +197,7 @@ export async function ensureFragmentFile(sourceUri: vscode.Uri, id: string): Pro
 	if (!folder) {
 		throw new Error('No workspace folder');
 	}
-	const cmsFolderName = vscode.workspace.getConfiguration('codemeta').get<string>('cmsFolder', 'cms');
-	const cmsFolder = vscode.Uri.joinPath(folder.uri, cmsFolderName);
+	const cmsFolder = getCmsFolderUri(folder);
 	await vscode.workspace.fs.createDirectory(cmsFolder);
 	const setFolder = vscode.Uri.joinPath(cmsFolder, getActiveSet() || 'default');
 	await vscode.workspace.fs.createDirectory(setFolder);

@@ -2,7 +2,7 @@
   "name": "codemeta",
   "displayName": "CodeMeta",
   "description": "Comment-linked Markdown fragments for VS Code",
-  "version": "0.0.6",
+  "version": "0.0.8",
   "publisher": "wumbl3",
   "license": "MIT",
   "repository": {
@@ -64,13 +64,18 @@
         "command": "codemeta.summarizeSetTxt",
         "title": "CodeMeta: Summarize Current Set (TOML)"
       }
+      ,
+      {
+        "command": "codemeta.upgradeLegacyMarkers",
+        "title": "CodeMeta: Upgrade Legacy Markers to codemeta[id]"
+      }
     ],
     "configuration": {
       "title": "CodeMeta",
       "properties": {
         "codemeta.cmsFolder": {
           "type": "string",
-          "default": "cms",
+          "default": ".cms",
           "description": "Folder at workspace root for Markdown fragments"
         },
         "codemeta.idLength": {
