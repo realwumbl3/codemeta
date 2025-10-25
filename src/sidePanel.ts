@@ -2,7 +2,6 @@ import * as vscode from 'vscode';
 
 import { getActiveSet } from './globals';
 import { getCmsFolderUri, parseFrontmatterAndCategory, findMarker, extractIdAfterMarkerText, getCmsFolderName } from './helper';
-// styling is now provided by src/sidepanel/main.html
 
 export class CodeMetaSidePanelProvider implements vscode.WebviewViewProvider {
 	private view: vscode.WebviewView | undefined;
