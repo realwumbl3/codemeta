@@ -20,7 +20,7 @@ class App {
             <div class="appbar">
                 <div class="appbar-left">
                     <div class="app-title">CodeMeta</div>
-                    <span class="version-badge">v0.0.10 · alpha</span>
+                    <span class="version-badge">v${window.version} · alpha</span>
                 </div>
             </div>
             <div class="toolbar row">

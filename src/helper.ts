@@ -21,8 +21,8 @@ function idRegex(): RegExp {
 }
 
 export function extractIdAfterMarkerText(afterMarkerText: string): string | null {
-    // New preferred format: [123]
-    const bracket = afterMarkerText.match(/^\[(\d{1,32})\]/);
+    // New preferred format: [123] (allow leading spaces)
+    const bracket = afterMarkerText.match(/^\s*\[(\d{1,32})\]/);
     if (bracket) return bracket[1];
     // Legacy format: whitespace + digits
     const match = afterMarkerText.match(idRegex());
@@ -30,26 +30,27 @@ export function extractIdAfterMarkerText(afterMarkerText: string): string | null
 }
 
 export function findMarker(lineText: string): { markerStart: number; markerEnd: number } | null {
-    // Prefer explicit codemeta markers, but keep legacy cm for triggers
-    const idxCodemetaSlash = lineText.indexOf('//codemeta');
-    if (idxCodemetaSlash >= 0) {
-        // length of "//codemeta" is 10
-        return { markerStart: idxCodemetaSlash, markerEnd: idxCodemetaSlash + 10 };
+    // Support: // codemeta, //codemeta, # codemeta, #codemeta, legacy cm variants,
+    // and HTML/CSS: <!-- codemeta, /* codemeta
+    const patterns: RegExp[] = [
+        /\/\/\s*(codemeta|cm)/g,   // JS/TS line comments
+        /#\s*(codemeta|cm)/g,      // Python/shell comments
+        /<!--\s*(codemeta|cm)/g,   // HTML comments
+        /\/\*\s*(codemeta|cm)/g   // CSS/C-like block comments
+    ];
+    let best: { start: number; end: number } | null = null;
+    for (const re of patterns) {
+        re.lastIndex = 0;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(lineText))) {
+            const start = m.index;
+            const end = m.index + m[0].length; // ends right after codemeta/cm
+            if (!best || start < best.start) {
+                best = { start, end };
+            }
+        }
     }
-    const idxCodemetaHash = lineText.indexOf('#codemeta');
-    if (idxCodemetaHash >= 0) {
-        // length of "#codemeta" is 9
-        return { markerStart: idxCodemetaHash, markerEnd: idxCodemetaHash + 9 };
-    }
-    const idx1 = lineText.indexOf('//cm');
-    if (idx1 >= 0) {
-        return { markerStart: idx1, markerEnd: idx1 + 4 };
-    }
-    const idx2 = lineText.indexOf('#cm');
-    if (idx2 >= 0) {
-        return { markerStart: idx2, markerEnd: idx2 + 3 };
-    }
-    return null;
+    return best ? { markerStart: best.start, markerEnd: best.end } : null;
 }
 
 export function generateId(length: number): string {
@@ -113,6 +114,98 @@ export function parseFrontmatterAndCategory(text: string): { body: string; categ
 		}
 	}
 	return { body: text, category };
+}
+
+// Extract lines from a YAML frontmatter block under a multiline key `refs: |`
+// Returns an array of strings like "<count>@<relpath>". If none, returns [].
+export function extractRefsLinesFromFrontmatter(text: string): string[] {
+	if (!text.startsWith('---')) return [];
+	const closeIdx = text.indexOf('\n---', 3);
+	if (closeIdx === -1) return [];
+	const header = text.slice(3, closeIdx);
+	const lines = header.split(/\r?\n/);
+	let inRefs = false;
+	const refs: string[] = [];
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i];
+		if (!inRefs) {
+			if (/^\s*refs\s*:\s*\|\s*$/.test(line)) {
+				inRefs = true;
+			}
+			continue;
+		}
+		// We are inside the block scalar; it ends when dedented (no leading space)
+		if (!/^\s+/.test(line)) {
+			break;
+		}
+		const val = line.replace(/^\s+/, '');
+		if (val.trim()) refs.push(val);
+	}
+	return refs;
+}
+
+// Update or remove the `refs: |` block inside YAML frontmatter.
+// Returns the updated full text (header + body). If refsLines is empty, the block is removed.
+export function setRefsLinesInFrontmatter(text: string, refsLines: string[]): string {
+	if (!text.startsWith('---')) return text;
+	const closeIdx = text.indexOf('\n---', 3);
+	if (closeIdx === -1) return text;
+	let header = text.slice(3, closeIdx);
+	const body = text.slice(closeIdx + 4); // include everything after closing --- and its newline
+	// Normalize: remove a single leading newline from header if present (avoid blank line after opening ---)
+	if (header.startsWith('\r\n')) header = header.slice(2);
+	else if (header.startsWith('\n')) header = header.slice(1);
+	const lines = header.split(/\r?\n/);
+	let out: string[] = [];
+	let i = 0;
+	while (i < lines.length) {
+		const line = lines[i];
+		if (/^\s*refs\s*:\s*\|\s*$/.test(line)) {
+			// skip existing block
+			i++;
+			while (i < lines.length && /^\s+/.test(lines[i])) i++;
+			continue;
+		}
+		out.push(line);
+		i++;
+	}
+	// Trim any leading empty lines to avoid growing blank space
+	while (out.length > 0 && out[0].trim() === '') out.shift();
+	if (refsLines.length > 0) {
+		// Insert refs block at the end of the header for simplicity
+		if (out.length > 0 && out[out.length - 1].trim() !== '') {
+			out.push('');
+		}
+		out.push('refs: |');
+		for (const r of refsLines) {
+			out.push('  ' + r);
+		}
+	}
+	const newHeader = out.join('\n');
+	return `---\n${newHeader}\n---${body}`;
+}
+
+// Convenience: update a single relPath entry with a count inside the refs block.
+// If count <= 0, the entry is removed. Returns updated text.
+export function upsertRefCountInFragmentText(text: string, relPath: string, count: number): string {
+	const current = extractRefsLinesFromFrontmatter(text);
+	const map = new Map<string, number>();
+	for (const line of current) {
+		const m = line.match(/^(\d+)@(.+)$/);
+		if (!m) continue;
+		const c = Number(m[1]);
+		const p = m[2];
+		if (Number.isFinite(c) && p) map.set(p, c);
+	}
+	if (count > 0) {
+		map.set(relPath, count);
+	} else {
+		map.delete(relPath);
+	}
+	const nextLines = Array.from(map.entries())
+		.sort((a, b) => a[0].localeCompare(b[0]))
+		.map(([p, c]) => `${c}@${p}`);
+	return setRefsLinesInFrontmatter(text, nextLines);
 }
 
 export function truncateLines(text: string, maxLines: number, maxChars: number): string {

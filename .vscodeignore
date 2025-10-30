@@ -17,3 +17,5 @@ CHANGELOG.md
 **/*.psd
 
 .mypublish
+
+testbase/**

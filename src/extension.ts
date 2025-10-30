@@ -14,7 +14,8 @@ import {
 	findAnyFragmentUri,
 	ensureFragmentFile,
 	showFragmentWithoutExplorerReveal,
-	getFragmentPreviewAndCategory
+	getFragmentPreviewAndCategory,
+	upsertRefCountInFragmentText
 } from './helper';
 
 type CmItem = { range: vscode.Range; hoverMessage?: vscode.MarkdownString; inline?: string };
@@ -79,6 +80,46 @@ export function activate(context: vscode.ExtensionContext): void {
 		}
 		// Inline bracket preview removed; rely on debounced pill refresh instead
 		if (debouncedRefresh) debouncedRefresh();
+	});
+
+	// Update refs header in fragment files for the saved document only (no full-repo scan)
+	const saveListener = vscode.workspace.onDidSaveTextDocument(async (doc) => {
+		try {
+			const folder = vscode.workspace.workspaceFolders?.[0];
+			if (!folder) return;
+			// Ignore saves inside the cms folder
+			const cmsName = getCmsFolderName();
+			const rel = vscode.workspace.asRelativePath(doc.uri);
+			if (rel.split(/[\\/]/).includes(cmsName)) return;
+			// Count ids in this document
+			const idCounts = new Map<string, number>();
+			for (let i = 0; i < doc.lineCount; i++) {
+				const line = doc.lineAt(i).text;
+				const marker = findMarker(line);
+				if (!marker) continue;
+				const after = line.slice(marker.markerEnd);
+				const id = extractIdAfterMarkerText(after);
+				if (!id) continue;
+				idCounts.set(id, (idCounts.get(id) || 0) + 1);
+			}
+			if (idCounts.size === 0) {
+				// If no ids, we still want to remove any stale entry from fragments previously referenced by this file.
+				// This would require knowing which fragments referenced this file previously; skipping for now.
+				return;
+			}
+			for (const [id, count] of idCounts) {
+				try {
+					const fragUri = await findAnyFragmentUri(doc.uri, id);
+					if (!fragUri) continue;
+					const data = await vscode.workspace.fs.readFile(fragUri);
+					const text = Buffer.from(data).toString('utf8');
+					const updated = upsertRefCountInFragmentText(text, rel, count);
+					if (updated !== text) {
+						await vscode.workspace.fs.writeFile(fragUri, Buffer.from(updated, 'utf8'));
+					}
+				} catch { /* ignore per-id errors */ }
+			}
+		} catch { /* ignore save processing */ }
 	});
 
 	const openFragmentCmd = vscode.commands.registerCommand('codemeta.openFragmentAtLine', async (uriString?: string, lineNumber?: number) => {
@@ -293,7 +334,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
 	debouncedRefresh = debounce(refreshPills, 150);
 
-	context.subscriptions.push(createFragmentCmd, changeListener, openFragmentCmd, newSetCmd, switchSetCmd, summarizeCmd, summarizeTxtCmd, upgradeLegacyCmd, linkReg1, linkReg2, refreshOnActive, refreshOnConfig);
+	context.subscriptions.push(createFragmentCmd, changeListener, saveListener, openFragmentCmd, newSetCmd, switchSetCmd, summarizeCmd, summarizeTxtCmd, upgradeLegacyCmd, linkReg1, linkReg2, refreshOnActive, refreshOnConfig);
 
 	// Initial render
 	refreshPills();
@@ -330,8 +371,16 @@ async function handlePotentialMarker(document: vscode.TextDocument, lineNumber: 
 			// Replace the marker and any immediate trailing space/underscore with standardized tag
 			const end = new vscode.Position(lineNumber, markerEnd);
 			const replaceRange = new vscode.Range(insertPos, end);
-			const isHash = text.startsWith('#', markerStart);
-			const prefix = isHash ? '#codemeta' : '//codemeta';
+			let prefix = '//codemeta';
+			if (text.startsWith('#', markerStart)) {
+				prefix = '#codemeta';
+			} else if (text.startsWith('//', markerStart)) {
+				prefix = '//codemeta';
+			} else if (text.startsWith('<!--', markerStart)) {
+				prefix = '<!-- codemeta';
+			} else if (text.startsWith('/*', markerStart)) {
+				prefix = '/* codemeta';
+			}
 			editBuilder.replace(replaceRange, `${prefix}[${id}]`);
 		}, { undoStopBefore: false, undoStopAfter: false });
 	} finally {
