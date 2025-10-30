@@ -16,6 +16,7 @@ export class CodeMetaSidePanelProvider implements vscode.WebviewViewProvider {
 		};
 		webviewView.webview.html = await this.getHtml(webviewView.webview);
 		webviewView.webview.onDidReceiveMessage(async (msg) => {
+			const reqId = msg && msg._reqId;
 			if (msg && typeof msg.command === 'string') {
 				try {
 					await vscode.commands.executeCommand(msg.command);
@@ -27,7 +28,7 @@ export class CodeMetaSidePanelProvider implements vscode.WebviewViewProvider {
 				await this.postFragmentList(getActiveSet());
 			}
 			if (msg && msg.type === 'fetchRefs' && msg.id) {
-				await this.postRefs(String(msg.id));
+				await this.postRefs(String(msg.id), reqId);
 			}
 			if (msg && msg.type === 'openFragment' && msg.id) {
 				await this.openFragmentById(String(msg.id));
@@ -112,8 +113,7 @@ export class CodeMetaSidePanelProvider implements vscode.WebviewViewProvider {
 			this.view.webview.postMessage({ type: 'list', items: [] });
 		}
 	}
-	
-//cm[8923196433]
+
 	private async openFragmentById(id: string): Promise<void> {
 		try {
 			const folder = vscode.workspace.workspaceFolders?.[0];
@@ -127,8 +127,7 @@ export class CodeMetaSidePanelProvider implements vscode.WebviewViewProvider {
 		}
 	}
 
-//codemeta[0] 
-	private async postRefs(id: string): Promise<void> {
+	private async postRefs(id: string, reqId: string): Promise<void> {
 		if (!this.view) return;
 		try {
 			const exclude = `{**/node_modules/**,**/.git/**,**/dist/**,**/out/**,**/${getCmsFolderName()}/**}`;
@@ -151,9 +150,9 @@ export class CodeMetaSidePanelProvider implements vscode.WebviewViewProvider {
 					}
 				} catch { }
 			}
-			this.view!.webview.postMessage({ type: 'refs', id, items });
+			this.view!.webview.postMessage({ type: 'refs', id, items, _reqId: reqId });
 		} catch {
-			this.view!.webview.postMessage({ type: 'refs', id, items: [] });
+			this.view!.webview.postMessage({ type: 'refs', id, items: [], _reqId: reqId });
 		}
 	}
 
@@ -171,51 +170,29 @@ export class CodeMetaSidePanelProvider implements vscode.WebviewViewProvider {
 
 	private async getHtml(webview: vscode.Webview): Promise<string> {
 		const nonce = this.createNonce();
-		try {
-			const htmlUri = vscode.Uri.joinPath(this.context.extensionUri, 'src', 'sidepanel', 'main.html');
-			const data = await vscode.workspace.fs.readFile(htmlUri);
-			let html = Buffer.from(data).toString('utf8');
-			// Build CSP and resource URIs
-			const cspMeta = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' ${webview.cspSource}; img-src ${webview.cspSource} data:; script-src 'nonce-${nonce}' ${webview.cspSource};" />`;
-			const zyxFile = vscode.Uri.joinPath(this.context.extensionUri, 'src', 'js', 'zyX.umd.js');
-			const zyxUri = webview.asWebviewUri(zyxFile).toString();
-			const srcBaseUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'src')).toString();
-			const srcBase = srcBaseUri.endsWith('/') ? srcBaseUri : srcBaseUri + '/';
-			const importMap = JSON.stringify({ imports: { 'codemeta/': srcBase } });
-			// Inject CSP, import map, and zyX loader into <head>
-			html = html.replace(
-				/<head>/i,
-				`<head>\n\t${cspMeta}\n\t<script type="importmap" nonce="${nonce}">${importMap}<\/script>\n\t<script src="${zyxUri}" nonce="${nonce}"><\/script>`
-			);
-			// Add nonce to any inline scripts present in HTML
-			html = html.replace(/<script(\s+[^>]*)?>/gi, (m) => {
-				if (/nonce=/.test(m)) return m;
-				return m.replace('<script', `<script nonce="${nonce}"`);
-			});
-			return html;
-		} catch {
-			// Fallback to minimal HTML if file is not found
-			const zyxFile = vscode.Uri.joinPath(this.context.extensionUri, 'src', 'js', 'zyX.umd.js');
-			const zyxUri = webview.asWebviewUri(zyxFile).toString();
-			const srcBaseUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'src')).toString();
-			const srcBase = srcBaseUri.endsWith('/') ? srcBaseUri : srcBaseUri + '/';
-			const importMap = JSON.stringify({ imports: { 'codemeta/': srcBase } });
-			return `<!DOCTYPE html>
-			<html lang="en">
-			<head>
-				<meta charset="UTF-8" />
-				<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' ${webview.cspSource}; img-src ${webview.cspSource} data:; script-src 'nonce-${nonce}' ${webview.cspSource};" />
-				<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-				<title>CodeMeta</title>
-				<style>body{font-family:var(--vscode-font-family);font-size:13px;padding:12px;color:var(--vscode-foreground);} .header{font-weight:600;margin-bottom:8px;}</style>
-				<script type="importmap" nonce="${nonce}">${importMap}<\/script>
-				<script src="${zyxUri}" nonce="${nonce}"><\/script>
-			</head>
-			<body>
-				<div class="header">CodeMeta</div>
-			</body>
-			</html>`;
-		}
+		const mainJsFile = vscode.Uri.joinPath(this.context.extensionUri, 'src', 'sidepanel', 'main.js');
+		const mainJsUri = webview.asWebviewUri(mainJsFile).toString();
+		const cssFile = vscode.Uri.joinPath(this.context.extensionUri, 'src', 'sidepanel', 'css.css');
+		const cssUri = webview.asWebviewUri(cssFile).toString();
+		const srcBaseUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'src')).toString();
+		const srcBase = srcBaseUri.endsWith('/') ? srcBaseUri : srcBaseUri + '/';
+		const importMap = JSON.stringify({ imports: { 'codemeta/': srcBase } });
+		const csp = `default-src 'none'; style-src 'unsafe-inline' ${webview.cspSource}; img-src ${webview.cspSource} data:; script-src 'nonce-${nonce}' ${webview.cspSource};`;
+		return `<!DOCTYPE html>
+		<html lang="en">
+		<head>
+			<meta charset="UTF-8" />
+			<meta http-equiv="Content-Security-Policy" content="${csp}" />
+			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+			<title>CodeMeta</title>
+			<link rel="stylesheet" href="${cssUri}" />
+			<script type="importmap" nonce="${nonce}">${importMap}<\/script>
+			<script type="module" src="${mainJsUri}" nonce="${nonce}"><\/script>
+		</head>
+		<body>
+			<div id="app"></div>
+		</body>
+		</html>`;
 	}
 
 	private createNonce(): string {
