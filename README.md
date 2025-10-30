@@ -13,21 +13,33 @@ CodeMeta lets you turn lightweight inline comment markers into linked Markdown f
 
 ## Quick start
 
-1. In a code file, type a marker and then a space or underscore right after it:
+1. In a code file, type a marker and then a space or underscore right after it (spaces after the comment token are OK):
 
 ```js
-//codemeta␣   or   //cm␣
+//codemeta␣   or   //cm␣   or   // codemeta␣   or   // cm␣
 ```
 
-or for Python/shell:
+Python/shell:
 
 ```py
-#codemeta␣   or   #cm␣
+#codemeta␣   or   #cm␣   or   # codemeta␣   or   # cm␣
+```
+
+HTML:
+
+```html
+<!-- codemeta␣   or   <!-- cm␣
+```
+
+CSS:
+
+```css
+/* codemeta␣   or   /* cm␣
 ```
 
 2. On the space or underscore, CodeMeta will:
 
--   Replace the marker with a bracketed tag and a numeric ID, e.g. `//codemeta[0]`
+-   Replace the marker with a bracketed tag and a numeric ID, e.g. `//codemeta[0]` (preserving the comment style, e.g., `#codemeta[0]`, `<!-- codemeta[0]`, `/* codemeta[0]`)
 -   Create `.cms/<active-set>/<id>.md` with frontmatter
 -   Open the fragment beside the source editor
 -   Display a category pill on the line with the first fragment line; hover to see more
@@ -54,14 +66,34 @@ Change `category` as you like (e.g., `BUG`, `TODO`, `NOTE`) and customize colors
 
 ## Features
 
--   **Markers**: `//codemeta` and `#codemeta` (preferred). Legacy `//cm` and `#cm` still work and are auto-upgraded on trigger.
+-   **Markers**: Supports `//codemeta` and `#codemeta` with or without a space after the comment token (e.g., `// codemeta`, `# codemeta`). Also supported in HTML (`<!-- codemeta`) and CSS (`/* codemeta`). Legacy `//cm` and `#cm` (and spaced variants) still work and are auto-upgraded on trigger.
 -   **Auto-ID**: Sequential numeric IDs persisted in `.cms/state.json`
 -   **Pill preview**: first line shown inside the pill (no text inserted into your file)
 -   **Hover preview**: pill tooltip shows a multi-line preview
 -   **Clickable marker**: Ctrl/Cmd+Click on the marker opens/creates the fragment
 -   **Fragment sets**: organize fragments under `.cms/<set>/`; switch sets quickly
 -   **Summaries**: generate `SUMMARY.md` and `SUMMARY.toml` for the active set with source occurrences
- -   **Side Panel**: Activity Bar view with quick actions (New/Switch Set, Summarize)
+-   **Side Panel**: Activity Bar view with quick actions (New/Switch Set, Summarize). Counts and references are read from each fragment’s stored refs (no full workspace scan).
+
+## Reference tracking and performance
+
+To avoid scanning your entire workspace, CodeMeta tracks where each fragment is referenced directly inside the fragment’s frontmatter under a multiline `refs` block. Each line is formatted as `<count>@<relative-path>`:
+
+```markdown
+---
+id: 3
+created: 2025-10-30T03:06:47.310Z
+category: INFO
+refs: |
+  2@src/app/main.ts
+  1@test.py
+---
+
+```
+
+-   These refs are updated incrementally on save for the file you edited.
+-   The side panel sums these counts for each fragment and, when you expand references, opens only the listed files to resolve exact line numbers.
+-   If a file stops referencing an ID, its stale entry will clear the next time that file is saved.
 
 ## Commands
 
@@ -129,12 +161,6 @@ Package a VSIX: `npm run package` (produces a `.vsix` you can install via the Ex
     -   `npm run watch` — incremental TypeScript build
     -   `npm run compile` — one-shot build
     -   `npm run package` — build VSIX with `vsce`
-
-## Tips
-
--   To create a fragment manually, place the cursor on a line with `//cm` or `#cm` and run "Create Fragment for Line"
--   Edit the first line of a fragment to improve its pill preview
--   Keep your `cms/` directory under version control if you want fragment history
 
 ## License
 

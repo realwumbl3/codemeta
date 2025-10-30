@@ -2,7 +2,7 @@
   "name": "codemeta",
   "displayName": "CodeMeta",
   "description": "Comment-linked Markdown fragments for VS Code",
-  "version": "0.0.13",
+  "version": "0.0.14",
   "publisher": "wumbl3",
   "license": "MIT",
   "repository": {
