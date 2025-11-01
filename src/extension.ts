@@ -8,6 +8,7 @@ import {
 	findMarker,
 	allocateNextId,
 	getCmsFolderName,
+	getCmsFolderUri,
 	findContentStartLine,
 	ensureSetFolderExists,
 	listAvailableSets,
@@ -15,7 +16,8 @@ import {
 	ensureFragmentFile,
 	showFragmentWithoutExplorerReveal,
 	getFragmentPreviewAndCategory,
-	upsertRefCountInFragmentText
+	upsertRefCountInFragmentText,
+	recalcRefsForFragment
 } from './helper';
 
 type CmItem = { range: vscode.Range; hoverMessage?: vscode.MarkdownString; inline?: string };
@@ -71,7 +73,7 @@ export function activate(context: vscode.ExtensionContext): void {
 			}
 			const markerPre = findMarker(preLine);
 			if (markerPre && pos === markerPre.markerEnd) {
-		const afterPre = preLine.slice(markerPre.markerEnd);
+				const afterPre = preLine.slice(markerPre.markerEnd);
 				const preId = extractIdAfterMarkerText(afterPre);
 				if (!preId) {
 					await handlePotentialMarker(e.document, ln, editor);
@@ -102,23 +104,27 @@ export function activate(context: vscode.ExtensionContext): void {
 				if (!id) continue;
 				idCounts.set(id, (idCounts.get(id) || 0) + 1);
 			}
-			if (idCounts.size === 0) {
-				// If no ids, we still want to remove any stale entry from fragments previously referenced by this file.
-				// This would require knowing which fragments referenced this file previously; skipping for now.
-				return;
-			}
-			for (const [id, count] of idCounts) {
-				try {
-					const fragUri = await findAnyFragmentUri(doc.uri, id);
-					if (!fragUri) continue;
-					const data = await vscode.workspace.fs.readFile(fragUri);
-					const text = Buffer.from(data).toString('utf8');
-					const updated = upsertRefCountInFragmentText(text, rel, count);
-					if (updated !== text) {
-						await vscode.workspace.fs.writeFile(fragUri, Buffer.from(updated, 'utf8'));
-					}
-				} catch { /* ignore per-id errors */ }
-			}
+			// Sync this file's count across all fragments in the active set
+			try {
+				const cmsFolder = getCmsFolderUri(folder);
+				const setFolder = vscode.Uri.joinPath(cmsFolder, getActiveSet() || 'default');
+				let entries: [string, vscode.FileType][] = [];
+				try { entries = await vscode.workspace.fs.readDirectory(setFolder); } catch { entries = []; }
+				for (const [name, type] of entries) {
+					if (type !== vscode.FileType.File || !/^(\d{1,32})\.md$/i.test(name)) continue;
+					const id = name.replace(/\.md$/i, '');
+					const fragUri = vscode.Uri.joinPath(setFolder, name);
+					try {
+						const data = await vscode.workspace.fs.readFile(fragUri);
+						const text = Buffer.from(data).toString('utf8');
+						const count = idCounts.get(id) || 0;
+						const updated = upsertRefCountInFragmentText(text, rel, count);
+						if (updated !== text) {
+							await vscode.workspace.fs.writeFile(fragUri, Buffer.from(updated, 'utf8'));
+						}
+					} catch { /* per-fragment ignore */ }
+				}
+			} catch { /* ignore per-set sync */ }
 		} catch { /* ignore save processing */ }
 	});
 
@@ -150,6 +156,7 @@ export function activate(context: vscode.ExtensionContext): void {
 			const id = maybeId;
 			const existing = await findAnyFragmentUri(document.uri, id);
 			const creation = existing ? { uri: existing, created: false } : await ensureFragmentFile(document.uri, id);
+			await recalcRefsForFragment(id);
 			const targetEditor = await showFragmentWithoutExplorerReveal(creation.uri, !creation.created);
 			if (creation.created && targetEditor) {
 				const contentStart = findContentStartLine(targetEditor.document);
@@ -231,6 +238,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
 	const upgradeLegacyCmd = vscode.commands.registerCommand('codemeta.upgradeLegacyMarkers', async () => {
 		try {
+			vscode.window.showInformationMessage('CodeMeta: Upgrading legacy markers... this may take a while...');
 			const exclude = `{**/node_modules/**,**/.git/**,**/dist/**,**/out/**,**/${getCmsFolderName()}/**}`;
 			const files = await vscode.workspace.findFiles('**/*', exclude);
 			let changedFiles = 0;
@@ -408,7 +416,7 @@ class CmLinkProvider implements vscode.DocumentLinkProvider {
 			const line = document.lineAt(i);
 			const markerInfo = findMarker(line.text);
 			if (!markerInfo) continue;
-		const range = new vscode.Range(i, markerInfo.markerStart, i, markerInfo.markerEnd);
+			const range = new vscode.Range(i, markerInfo.markerStart, i, markerInfo.markerEnd);
 			const target = vscode.Uri.parse(`command:codemeta.openFragmentAtLine?${encodeURIComponent(JSON.stringify([document.uri.toString(), i]))}`);
 			const link = new vscode.DocumentLink(range, target);
 			// Add a clearer tooltip instead of the default "Execute command (Ctrl+Click)"

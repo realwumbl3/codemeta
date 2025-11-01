@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 
 import * as path from 'path';
 import { getActiveSet } from './globals';
-import { getCmsFolderUri, parseFrontmatterAndCategory, findMarker, extractIdAfterMarkerText, getCmsFolderName, extractRefsLinesFromFrontmatter } from './helper';
+import { getCmsFolderUri, parseFrontmatterAndCategory, findMarker, extractIdAfterMarkerText, getCmsFolderName, extractRefsLinesFromFrontmatter, recalcRefsForFragment } from './helper';
 
 export class CodeMetaSidePanelProvider implements vscode.WebviewViewProvider {
 	private view: vscode.WebviewView | undefined;
@@ -106,10 +106,14 @@ export class CodeMetaSidePanelProvider implements vscode.WebviewViewProvider {
 		try {
 			const folder = vscode.workspace.workspaceFolders?.[0];
 			if (!folder) return;
+			// Recalculate refs before opening so header is up to date
+			await recalcRefsForFragment(id);
 			const cmsFolder = getCmsFolderUri(folder);
 			const setFolder = vscode.Uri.joinPath(cmsFolder, getActiveSet() || 'default');
 			const uri = vscode.Uri.joinPath(setFolder, `${id}.md`);
 			await vscode.window.showTextDocument(uri, { preview: false });
+			// Refresh side panel list to reflect updated ref counts
+			await this.postFragmentList(getActiveSet());
 		} catch {
 			// ignore
 		}

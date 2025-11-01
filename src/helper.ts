@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { getActiveSet } from './globals';
 
 export function getCmsFolderName(): string {
@@ -353,4 +354,61 @@ export async function getFragmentPreviewAndCategory(sourceUri: vscode.Uri, id: s
 	}
 }
 
+
+export async function recalcRefsForFragment(id: string): Promise<void> {
+	const folder = vscode.workspace.workspaceFolders?.[0];
+	if (!folder) return;
+	try {
+		// Read current refs from the fragment header and only re-count those files
+		const cmsFolder = getCmsFolderUri(folder);
+		const setFolder = vscode.Uri.joinPath(cmsFolder, getActiveSet() || 'default');
+		const fragUri = vscode.Uri.joinPath(setFolder, `${id}.md`);
+		let currentRefs: string[] = [];
+		try {
+			const fragData = await vscode.workspace.fs.readFile(fragUri);
+			const fragText = Buffer.from(fragData).toString('utf8');
+			currentRefs = extractRefsLinesFromFrontmatter(fragText);
+		} catch { /* missing fragment or no refs */ }
+		if (currentRefs.length === 0) {
+			return; // nothing to recalc without a starting list
+		}
+		const relPaths = currentRefs
+			.map((r) => r.match(/^(\d+)@(.+)$/))
+			.filter((m): m is RegExpMatchArray => !!m)
+			.map((m) => m[2]);
+		const perFileCounts = new Map<string, number>();
+		for (const rel of relPaths) {
+			try {
+				const absFsPath = path.join(folder.uri.fsPath, rel.replace(/[\\/]/g, path.sep));
+				const uri = vscode.Uri.file(absFsPath);
+				const data = await vscode.workspace.fs.readFile(uri);
+				const text = Buffer.from(data).toString('utf8');
+				let count = 0;
+				const lines = text.split(/\r?\n/);
+				for (let i = 0; i < lines.length; i++) {
+					const marker = findMarker(lines[i]);
+					if (!marker) continue;
+					const after = lines[i].slice(marker.markerEnd);
+					const found = extractIdAfterMarkerText(after);
+					if (found === id) count++;
+				}
+				if (count > 0) perFileCounts.set(rel, count);
+			} catch {
+				// file missing or unreadable -> treated as zero (removed)
+			}
+		}
+		const refsLines = Array.from(perFileCounts.entries())
+			.sort((a, b) => a[0].localeCompare(b[0]))
+			.map(([rel, c]) => `${c}@${rel}`);
+		// Write back only if changed
+		try {
+			const fragData = await vscode.workspace.fs.readFile(fragUri);
+			const fragText = Buffer.from(fragData).toString('utf8');
+			const updated = setRefsLinesInFrontmatter(fragText, refsLines);
+			if (updated !== fragText) {
+				await vscode.workspace.fs.writeFile(fragUri, Buffer.from(updated, 'utf8'));
+			}
+		} catch { }
+	} catch { /* ignore recalculation errors */ }
+}
 
